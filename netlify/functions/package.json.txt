@@ -1,0 +1,4 @@
+{
+  "name": "netlify-svg-generator-on-web",
+  "version": "1.0.0"
+}
