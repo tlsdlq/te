@@ -1,0 +1,11 @@
+{
+  "name": "netlify-bgimg-cache-overlay",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "netlify dev"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.33.3"
+  }
+}
