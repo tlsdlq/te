@@ -7,4 +7,4 @@
 
 # ✨ --- 이 부분을 추가하거나 수정합니다 --- ✨
 [[builders]]
-  path = "/.netlify/builders/placeholder.js"
+  path = "/.netlify/builders/*"
