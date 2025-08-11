@@ -2,6 +2,7 @@
   "name": "netlify-svg-sharp-optimizer",
   "version": "1.0.0",
   "dependencies": {
+    "@netlify/functions": "^2.6.0",
     "sharp": "^0.33.3",
     "node-fetch": "^2.7.0"
   }
