@@ -5,10 +5,14 @@
   node_bundler = "esbuild"
   included_files = ["node_modules/sharp/**"]
 
-# 🔥 Edge Functions 설정 (더 빠른 캐싱)
-[[edge_functions]]
-  function = "durable-image"
-  path = "/.netlify/functions/durable-image"
+# 🔧 함수별 설정
+[functions.durable-image]
+  timeout = 30
+  memory = 1024
+
+[functions.debug-image]
+  timeout = 10
+  memory = 512
 
 # 🚀 함수별 개별 캐싱 설정
 [[headers]]
