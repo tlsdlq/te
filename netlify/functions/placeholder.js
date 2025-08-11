@@ -1,39 +1,34 @@
-// /netlify/functions/placeholder.js
-const sharp = require('sharp');
-
-exports.handler = async function(event, context) {
+exports.handler = async function(event) {
   const { w, h, text = '', bgImg, bgColor, textColor, fontSize } = event.queryStringParameters;
-
-  // w, h 파라미터가 없으면 SVG의 기본 크기를 지정합니다.
-  const finalWidth = parseInt(w || '600', 10);
-  const finalHeight = parseInt(h || '400', 10);
 
   let backgroundContent = '';
   let errorText = '';
+  let finalWidth = parseInt(w || '600', 10);
+  let finalHeight = parseInt(h || '400', 10);
 
   if (bgImg) {
     try {
-      // 1. image-proxy를 호출하여 원본 이미지 데이터를 가져옵니다. (이 부분은 캐시가 잘 작동합니다)
+      // ✨ --- 여기가 핵심 변경 사항입니다 --- ✨
+      // 1. 직접 이미지를 처리하는 대신, 최적화된 배경 이미지를 생성/캐시하는 함수를 호출합니다.
       const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
-      const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
+      // URL 생성 시 text와 같은 가변 파라미터는 제외합니다.
+      const bgUrl = `${siteUrl}/.netlify/functions/optimized-bg?bgImg=${encodeURIComponent(bgImg)}${w ? '&w='+w : ''}${h ? '&h='+h : ''}`;
 
-      const imageResponse = await fetch(proxyUrl);
+      const imageResponse = await fetch(bgUrl);
       if (!imageResponse.ok) {
-        throw new Error(`Fetch via proxy failed: ${imageResponse.status}`);
+        throw new Error(`Optimized BG fetch failed: ${imageResponse.status}`);
       }
       
+      // `optimized-bg` 함수가 반환한 WebP 이미지 데이터를 Base64로 인코딩합니다.
       const imageBuffer = await imageResponse.arrayBuffer();
+      const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+      
+      // 원본 이미지의 크기를 알 수 없으므로, 파라미터가 없으면 기본값을 사용해야 합니다.
+      // (필요하다면 optimized-bg가 헤더에 크기 정보를 담아 전달하는 방법도 가능합니다)
 
-      // 2. sharp를 이용해 이미지를 최적화하고 Base64로 변환합니다.
-      const optimizedBuffer = await sharp(Buffer.from(imageBuffer))
-        .resize({ width: finalWidth, height: finalHeight, fit: 'cover' })
-        .webp({ quality: 80 })
-        .toBuffer();
-
-      const imageBase64 = optimizedBuffer.toString('base64');
-
-      // 3. 이미지를 Base64 데이터로 SVG 안에 직접 내장(Embed)합니다.
+      // 2. 이미지를 Base64 데이터로 SVG 안에 직접 내장합니다.
       backgroundContent = `<image href="data:image/webp;base64,${imageBase64}" x="0" y="0" width="${finalWidth}" height="${finalHeight}" preserveAspectRatio="xMidYMid slice"/>`;
+      // ✨ --- 여기까지가 핵심 변경 사항입니다 --- ✨
 
     } catch (err) {
       errorText = 'Image Load Error!';
@@ -44,7 +39,7 @@ exports.handler = async function(event, context) {
     backgroundContent = `<rect width="100%" height="100%" fill="#cccccc" />`;
   }
   
-  // 4. SVG를 생성합니다.
+  // 3. SVG를 생성합니다.
   const boxHeight = finalHeight * 0.25;
   const boxY = finalHeight - boxHeight;
   const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
@@ -52,12 +47,11 @@ exports.handler = async function(event, context) {
   const textY = boxY + (boxHeight / 2);
   const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">${backgroundContent}${text || errorText ? `<rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="middle">${errorText || text}</text>` : ''}</svg>`;
 
+  // 4. 최종 SVG도 캐시합니다. (URL이 다르므로 text 별로 캐시됨)
   return {
     statusCode: 200,
     headers: { 
       'Content-Type': 'image/svg+xml',
-      // --- ✨ ✨ ✨ 이게 진짜 핵심입니다 ✨ ✨ ✨ ---
-      // 생성된 이 SVG 자체를 CDN과 브라우저에 1년간 저장하도록 지시합니다.
       'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
     },
     body: svg,
