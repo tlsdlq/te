@@ -3,12 +3,10 @@
 
 [functions]
   node_bundler = "esbuild"
-  # Sharp 라이브러리 포함
-  included_files = ["node_modules/sharp/**"]
+  included_files = ["node_modules/sharp/**", "node_modules/cdn-cache-control/**"]
 
-# 함수별 개별 설정
 [[headers]]
-  for = "/.netlify/functions/image-generator"
+  for = "/.netlify/functions/durable-image"
   [headers.values]
-    Cache-Control = "public, max-age=3600, s-maxage=86400"
-    X-Robots-Tag = "noindex"
+    Cache-Control = "public, max-age=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, max-age=31536000, durable"
