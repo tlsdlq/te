@@ -8,28 +8,34 @@ exports.handler = async function(event) {
   if (!bgImg) return { statusCode: 400, body: 'Error: bgImg parameter is required.' };
 
   try {
-    const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
-    const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
+    // 1. 프록시를 거치지 않고, 원본 이미지 URL을 직접 사용합니다.
+    const imageUrl = decodeURIComponent(bgImg);
 
-    const imageResponse = await fetch(proxyUrl);
+    // 2. 외부 서버 차단을 막기 위해 브라우저인 척 위장합니다.
+    const fetchOptions = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+      }
+    };
+    
+    // 3. 원본 이미지를 직접 fetch 합니다.
+    const imageResponse = await fetch(imageUrl, fetchOptions);
     if (!imageResponse.ok) {
-        throw new Error(`Proxy fetch failed: ${imageResponse.status} ${await imageResponse.text()}`);
+        throw new Error(`Original image fetch failed: ${imageResponse.status} ${imageResponse.statusText}`);
     }
     
-    // ✨ --- 여기가 핵심적인 수정 부분입니다 --- ✨
-    // 1. image-proxy가 보낸 Base64 '텍스트'를 받아옵니다.
-    const base64Image = await imageResponse.text();
-    // 2. Base64 텍스트를 실제 이미지 데이터(Buffer)로 디코딩합니다.
-    const imageBuffer = Buffer.from(base64Image, 'base64');
+    // 4. 이제 데이터는 순수한 이미지 바이너리이므로, arrayBuffer()로 바로 받습니다.
+    const imageBuffer = await imageResponse.arrayBuffer();
     
-    // 3. 디코딩된 이미지 버퍼를 sharp로 처리합니다.
-    const image = sharp(imageBuffer);
+    // 5. sharp로 처리합니다.
+    const image = sharp(Buffer.from(imageBuffer));
     
     const metadata = await image.metadata();
     const { width, height } = metadata;
 
     const optimizedBuffer = await image.webp({ quality: 80 }).toBuffer();
 
+    // 6. 정상적으로 결과를 반환합니다.
     return {
       statusCode: 200,
       headers: {
@@ -44,7 +50,6 @@ exports.handler = async function(event) {
     };
 
   } catch (err) {
-    // 에러를 더 자세히 볼 수 있도록 수정
     return { 
       statusCode: 500, 
       headers: { 'Content-Type': 'text/plain' },
