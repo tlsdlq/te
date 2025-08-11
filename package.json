@@ -1,7 +1,8 @@
 {
-  "name": "netlify-svg-sharp-optimizer",
+  "name": "netlify-durable-image-cache",
   "version": "1.0.0",
   "dependencies": {
-    "sharp": "^0.33.3"
+    "sharp": "^0.33.4",
+    "cdn-cache-control": "^1.0.1"
   }
 }
