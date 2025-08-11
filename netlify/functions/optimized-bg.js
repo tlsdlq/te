@@ -1,3 +1,5 @@
+// netlify/functions/optimized-bg.js
+
 const sharp = require('sharp');
 const fetch = require('node-fetch');
 
@@ -10,10 +12,18 @@ exports.handler = async function(event) {
     const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
 
     const imageResponse = await fetch(proxyUrl);
-    if (!imageResponse.ok) throw new Error(`Proxy fetch failed: ${imageResponse.status}`);
+    if (!imageResponse.ok) {
+        throw new Error(`Proxy fetch failed: ${imageResponse.status} ${await imageResponse.text()}`);
+    }
     
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const image = sharp(Buffer.from(imageBuffer));
+    // ✨ --- 여기가 핵심적인 수정 부분입니다 --- ✨
+    // 1. image-proxy가 보낸 Base64 '텍스트'를 받아옵니다.
+    const base64Image = await imageResponse.text();
+    // 2. Base64 텍스트를 실제 이미지 데이터(Buffer)로 디코딩합니다.
+    const imageBuffer = Buffer.from(base64Image, 'base64');
+    
+    // 3. 디코딩된 이미지 버퍼를 sharp로 처리합니다.
+    const image = sharp(imageBuffer);
     
     const metadata = await image.metadata();
     const { width, height } = metadata;
@@ -34,6 +44,11 @@ exports.handler = async function(event) {
     };
 
   } catch (err) {
-    return { statusCode: 500, body: 'Error processing image.' };
+    // 에러를 더 자세히 볼 수 있도록 수정
+    return { 
+      statusCode: 500, 
+      headers: { 'Content-Type': 'text/plain' },
+      body: `Error in optimized-bg: ${err.message}` 
+    };
   }
 };
