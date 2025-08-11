@@ -11,8 +11,7 @@ exports.handler = async function(event) {
     try {
       const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
       // URL이 매우 간단해졌습니다.
-      const bgUrl = `${siteUrl}/.netlify/builders/optimized-bg?
-      bgImg=${encodeURIComponent(bgImg)}`;
+      const bgUrl = `${siteUrl}/.netlify/builders/optimized-bg?bgImg=${encodeURIComponent(bgImg)}`;
 
       const imageResponse = await fetch(bgUrl);
       if (!imageResponse.ok) throw new Error(`Optimized BG fetch failed: ${imageResponse.status}`);
