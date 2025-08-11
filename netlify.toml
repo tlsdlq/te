@@ -3,10 +3,34 @@
 
 [functions]
   node_bundler = "esbuild"
-  included_files = ["node_modules/sharp/**", "node_modules/cdn-cache-control/**"]
+  included_files = ["node_modules/sharp/**"]
 
+# 🔥 Edge Functions 설정 (더 빠른 캐싱)
+[[edge_functions]]
+  function = "durable-image"
+  path = "/.netlify/functions/durable-image"
+
+# 🚀 함수별 개별 캐싱 설정
 [[headers]]
   for = "/.netlify/functions/durable-image"
   [headers.values]
+    # 브라우저 캐시: 1년
     Cache-Control = "public, max-age=31536000, immutable"
+    # 🔥 CDN + Durable Cache: 영구
     Netlify-CDN-Cache-Control = "public, max-age=31536000, durable"
+    # 압축 활성화
+    Content-Encoding = "gzip"
+
+# 🛡️ 보안 헤더
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# 🎯 리디렉트 설정 (선택사항)
+[[redirects]]
+  from = "/api/image"
+  to = "/.netlify/functions/durable-image"
+  status = 200
