@@ -1,12 +1,6 @@
-const sharp = require('sharp');
+// te/netlify/functions/durable-image.js
 
-// 🛡️ 보안 및 성능 설정
-const ALLOWED_DOMAINS = [
-  'images.unsplash.com',
-  'cdn.example.com',
-  'picsum.photos',
-  // 필요한 도메인 추가
-];
+const sharp = require('sharp');
 
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB
 const TIMEOUT_MS = 25000;
@@ -20,11 +14,13 @@ const DEFAULTS = {
   quality: 85
 };
 
-// 🔒 보안 검증
+// 🔒 보안 검증 (모든 도메인을 허용하도록 수정됨)
 function isValidImageUrl(url) {
+  // 경고: 모든 도메인을 허용하는 것은 보안상 위험할 수 있습니다.
+  // URL 형식이 올바른지 기본적인 확인만 수행합니다.
   try {
-    const urlObj = new URL(url);
-    return ALLOWED_DOMAINS.some(domain => urlObj.hostname === domain || urlObj.hostname.endsWith(`.${domain}`));
+    new URL(url);
+    return true;
   } catch {
     return false;
   }
@@ -59,7 +55,8 @@ function generateFinalCacheKey(params) {
 // 🖼️ 배경이미지 처리 및 WebP 최적화
 async function processBackgroundImage(url, targetWidth, targetHeight) {
   if (!isValidImageUrl(url)) {
-    throw new Error('Unauthorized domain');
+    // 이 오류는 이제 유효하지 않은 URL 형식일 때만 발생합니다.
+    throw new Error('Invalid image URL format');
   }
 
   const controller = new AbortController();
@@ -298,49 +295,4 @@ exports.handler = async (event) => {
     });
 
     // 🔥 Durable Cache 헤더 설정
-    const response = {
-      statusCode: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'image/svg+xml',
-        // 브라우저 캐시: 1년
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        // 🚀 Netlify Durable Cache: 영구 저장
-        'Netlify-CDN-Cache-Control': 'public, max-age=31536000, durable',
-        // 캐시 태그들 (무효화용)
-        'Netlify-Cache-Tag': imageCacheKey ? 
-          `final-${finalCacheKey}, image-${imageCacheKey}` : 
-          `final-${finalCacheKey}`,
-        // 디버깅 정보
-        'X-Cache-Key': finalCacheKey,
-        'X-Image-Cache-Key': imageCacheKey || 'none',
-        'X-Cache-Status': 'MISS', // 첫 요청시
-      },
-      body: svg
-    };
-
-    console.log(`✅ Response generated with durable cache: ${finalCacheKey}`);
-    return response;
-
-  } catch (error) {
-    console.error('❌ Handler error:', error);
-    
-    // 에러 상황에서도 기본 SVG 제공 (캐시하지 않음)
-    const errorSvg = generateSVG({
-      width: DEFAULTS.width,
-      height: DEFAULTS.height,
-      text: `⚠️ Service Error: ${error.message}`,
-      isError: true
-    });
-
-    return {
-      statusCode: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'no-cache, no-store', // 에러는 캐시 안함
-      },
-      body: errorSvg
-    };
-  }
-};
+ 
