@@ -4,7 +4,7 @@ const fetch = require('node-fetch');
 
 exports.handler = async function(event) {
   const { bgImg, text, bgColor, textColor, fontSize } = event.queryStringParameters;
-  if (!bgImg) { /* 이전과 동일한 에러 처리 */ }
+  if (!bgImg) { /* ... 에러 처리 ... */ }
 
   try {
     const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
@@ -17,7 +17,7 @@ exports.handler = async function(event) {
       throw new Error(`[optimized-bg 실패] ${errorBody}`);
     }
 
-    // 2. 응답의 '본문'은 사용하지 않고, 오직 '헤더'에서 크기 정보만 가져옵니다.
+    // 2. 응답의 '본문'은 절대 사용하지 않고, 오직 '헤더'에서 크기 정보만 가져옵니다.
     const finalWidth = parseInt(imageResponse.headers.get('x-image-width'), 10);
     const finalHeight = parseInt(imageResponse.headers.get('x-image-height'), 10);
     if (isNaN(finalWidth) || isNaN(finalHeight)) {
@@ -40,8 +40,8 @@ exports.handler = async function(event) {
       headers: {
         'Content-Type': 'image/svg+xml',
         'Access-Control-Allow-Origin': '*',
-        // 이 SVG 파일 자체는 매우 가벼우므로 캐시를 짧게 가져갑니다.
-        'Cache-Control': 'public, max-age=600, s-maxage=600',
+        // 이 SVG 파일 자체는 매우 가벼우므로 캐시를 짧게 가져가거나 안해도 됩니다.
+        'Cache-Control': 'no-cache',
       },
       body: svg.trim(),
     };
