@@ -1,6 +1,6 @@
-# Netlify 서버리스 함수에 대한 '전체' 설정을 정의합니다.
-[functions]
-  
+# 모든 함수(*)에 적용될 설정을 정의합니다.
+[functions."*"]
+
   # [중요] sharp 라이브러리가 서버에서 작동하는 데 필요한 모든 파일을
   # 배포 시 반드시 포함하도록 지정합니다.
   included_files = ["node_modules/sharp/**"]
