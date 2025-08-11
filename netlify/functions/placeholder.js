@@ -12,13 +12,10 @@ exports.handler = async function(event, context) {
       
       const imageBuffer = await imageResponse.arrayBuffer();
 
-      // --- ✨ 여기가 핵심! sharp를 이용한 이미지 최적화 ✨ ---
       const image = sharp(Buffer.from(imageBuffer));
       
-      // 이미지 메타데이터(크기 등) 읽기
       const metadata = await image.metadata();
 
-      // 크기 결정 로직
       if (w && h) {
         finalWidth = parseInt(w, 10);
         finalHeight = parseInt(h, 10);
@@ -27,12 +24,10 @@ exports.handler = async function(event, context) {
         finalHeight = metadata.height;
       }
 
-      // 이미지를 최적화하여 새로운 버퍼 생성
       const optimizedBuffer = await image
         .resize({ width: finalWidth, height: finalHeight, fit: 'cover' }) // 크기 조절
         .webp({ quality: 80 }) // 가벼운 WebP 포맷으로, 품질 80%로 압축
         .toBuffer();
-      // ----------------------------------------------------
 
       const imageBase64 = optimizedBuffer.toString('base64');
       const imageMimeType = 'image/webp'; // 포맷을 webp로 고정
@@ -49,7 +44,6 @@ exports.handler = async function(event, context) {
     backgroundContent = `<rect width="100%" height="100%" fill="#cccccc" />`;
   }
   
-  // (SVG 생성 로직은 이전과 동일)
   const boxHeight = finalHeight * 0.25;
   const boxY = finalHeight - boxHeight;
   const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
