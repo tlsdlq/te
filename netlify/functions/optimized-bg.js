@@ -1,7 +1,7 @@
 const sharp = require('sharp');
 
 exports.handler = async function(event) {
-  const { bgImg, w, h } = event.queryStringParameters;
+  const { bgImg } = event.queryStringParameters;
 
   if (!bgImg) {
     return { statusCode: 400, body: 'Error: bgImg parameter is required.' };
@@ -12,28 +12,29 @@ exports.handler = async function(event) {
     const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
 
     const imageResponse = await fetch(proxyUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Fetch via proxy failed: ${imageResponse.status}`);
-    }
+    if (!imageResponse.ok) throw new Error(`Proxy fetch failed: ${imageResponse.status}`);
     
     const imageBuffer = await imageResponse.arrayBuffer();
     const image = sharp(Buffer.from(imageBuffer));
     
+    // ✨ --- 여기가 핵심입니다 (1) --- ✨
+    // 원본 이미지의 메타데이터에서 너비와 높이를 직접 읽습니다.
     const metadata = await image.metadata();
-    const finalWidth = parseInt(w || metadata.width, 10);
-    const finalHeight = parseInt(h || metadata.height, 10);
+    const { width, height } = metadata;
 
     const optimizedBuffer = await image
-      .resize({ width: finalWidth, height: finalHeight, fit: 'cover' })
-      .webp({ quality: 80 })
+      .webp({ quality: 80 }) // 리사이즈 없이 원본 크기 그대로 최적화
       .toBuffer();
 
-    // ✨ 가장 중요: 최적화된 "이미지"를 강력하게 캐시하여 반환
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'image/webp',
         'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
+        // ✨ --- 여기가 핵심입니다 (2) --- ✨
+        // 다음 함수가 사용할 수 있도록 헤더에 이미지 크기를 담아줍니다.
+        'X-Image-Width': width,
+        'X-Image-Height': height,
       },
       body: optimizedBuffer.toString('base64'),
       isBase64Encoded: true,
