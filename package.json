@@ -1,10 +1,7 @@
 {
-  "name": "netlify-svg-generator-on-web",
+  "name": "netlify-svg-generator-reset",
   "version": "1.0.0",
   "dependencies": {
     "image-size": "^1.1.1"
-  },
-  "scripts": {
-    "build": "node build_redirects.js"
   }
 }
