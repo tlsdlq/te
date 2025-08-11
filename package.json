@@ -1,8 +1,0 @@
-{
-  "name": "netlify-svg-sharp-optimizer",
-  "version": "1.0.0",
-  "dependencies": {
-    "sharp": "^0.33.3",
-    "node-fetch": "^2.7.0"
-  }
-}
