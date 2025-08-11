@@ -1,15 +1,14 @@
-# /netlify.toml
+[build]
+  functions = "netlify/functions"
 
-# On-Demand Builders와 일반 Functions 모두에 적용될 기본 설정
 [functions]
   node_bundler = "esbuild"
-  # sharp 라이브러리가 빌드 결과물에 포함되도록 설정
+  # Sharp 라이브러리 포함
   included_files = ["node_modules/sharp/**"]
 
-# ✨ On-Demand Builders 설정 ✨
-# 이 부분이 '1시간 후 재실행' 문제를 해결하는 핵심입니다.
-[[builders]]
-  # /.netlify/builders/ 로 시작하는 모든 URL 요청을 On-Demand Builder가 처리하도록 합니다.
-  # Netlify는 요청 경로에 맞춰 /netlify/builders/ 디렉토리에서 일치하는 파일을 찾아 실행합니다.
-  # 예: /.netlify/builders/placeholder -> /netlify/builders/placeholder.js 실행
-  path = "/.netlify/builders/*"
+# 함수별 개별 설정
+[[headers]]
+  for = "/.netlify/functions/image-generator"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, s-maxage=86400"
+    X-Robots-Tag = "noindex"
