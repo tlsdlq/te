@@ -1,10 +1,10 @@
 const sharp = require('sharp');
-const { addCacheHeaders } = require('cdn-cache-control');
 
 // 🛡️ 보안 및 성능 설정
 const ALLOWED_DOMAINS = [
   'images.unsplash.com',
   'cdn.example.com',
+  'picsum.photos',
   // 필요한 도메인 추가
 ];
 
@@ -24,14 +24,40 @@ const DEFAULTS = {
 function isValidImageUrl(url) {
   try {
     const urlObj = new URL(url);
-    return ALLOWED_DOMAINS.some(domain => urlObj.hostname === domain);
+    return ALLOWED_DOMAINS.some(domain => urlObj.hostname === domain || urlObj.hostname.endsWith(`.${domain}`));
   } catch {
     return false;
   }
 }
 
-// 🖼️ 이미지 처리 (WebP 최적화)
-async function processImage(url) {
+// 🔑 배경이미지만을 위한 별도 캐시 키 생성
+function generateImageCacheKey(url, width, height) {
+  const keyData = {
+    url: url,
+    w: width || 'auto',
+    h: height || 'auto'
+  };
+  return 'img-' + Buffer.from(JSON.stringify(keyData)).toString('base64').slice(0, 12);
+}
+
+// 🔑 최종 결과물을 위한 캐시 키 생성
+function generateFinalCacheKey(params) {
+  const { bgImg, text, bgColor, textColor, fontSize, width, height } = params;
+  const keyData = {
+    bg: bgImg ? generateImageCacheKey(bgImg, width, height) : '',
+    text: text || '',
+    bgColor: bgColor || DEFAULTS.bgColor,
+    textColor: textColor || DEFAULTS.textColor,
+    fontSize: fontSize || 'auto',
+    width: width || DEFAULTS.width,
+    height: height || DEFAULTS.height
+  };
+  
+  return 'final-' + Buffer.from(JSON.stringify(keyData)).toString('base64').slice(0, 12);
+}
+
+// 🖼️ 배경이미지 처리 및 WebP 최적화
+async function processBackgroundImage(url, targetWidth, targetHeight) {
   if (!isValidImageUrl(url)) {
     throw new Error('Unauthorized domain');
   }
@@ -40,46 +66,60 @@ async function processImage(url) {
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
+    console.log(`Downloading background image: ${url}`);
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'Netlify-Durable-Image/1.0' }
+      headers: { 
+        'User-Agent': 'Netlify-Durable-Image/1.0',
+        'Accept': 'image/*'
+      }
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
     
     const contentLength = parseInt(response.headers.get('content-length') || '0');
-    if (contentLength > MAX_IMAGE_SIZE) throw new Error('Image too large');
+    if (contentLength > MAX_IMAGE_SIZE) {
+      throw new Error('Image too large');
+    }
 
     const imageBuffer = await response.arrayBuffer();
     const image = sharp(Buffer.from(imageBuffer));
     
     const metadata = await image.metadata();
-    const { width, height } = metadata;
+    console.log(`Original image: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-    // 🎯 WebP 최적화 + 리사이징 (필요시)
-    let processedImage = image;
-    
-    // 너무 큰 이미지는 리사이징
-    if (width > 1920 || height > 1080) {
-      processedImage = processedImage.resize(1920, 1080, { 
-        fit: 'inside',
-        withoutEnlargement: true 
-      });
+    // 🎯 타겟 크기 결정
+    let finalWidth = targetWidth || metadata.width;
+    let finalHeight = targetHeight || metadata.height;
+
+    // 너무 큰 이미지는 리사이징 (최대 1920x1080)
+    if (finalWidth > 1920 || finalHeight > 1080) {
+      const ratio = Math.min(1920 / finalWidth, 1080 / finalHeight);
+      finalWidth = Math.floor(finalWidth * ratio);
+      finalHeight = Math.floor(finalHeight * ratio);
     }
 
-    const optimizedBuffer = await processedImage
+    // 🚀 WebP 최적화 처리
+    const optimizedBuffer = await image
+      .resize(finalWidth, finalHeight, { 
+        fit: 'cover',
+        position: 'centre'
+      })
       .webp({ 
         quality: DEFAULTS.quality,
-        effort: 6 // 최고 압축 효율
+        effort: 6
       })
       .toBuffer();
 
+    console.log(`Processed image: ${finalWidth}x${finalHeight}, size: ${optimizedBuffer.length} bytes`);
+
     return {
       buffer: optimizedBuffer,
-      originalWidth: width,
-      originalHeight: height,
-      finalWidth: Math.min(width, 1920),
-      finalHeight: Math.min(height, 1080)
+      width: finalWidth,
+      height: finalHeight,
+      base64: optimizedBuffer.toString('base64')
     };
 
   } finally {
@@ -96,68 +136,88 @@ function generateSVG(options) {
     bgColor = DEFAULTS.bgColor,
     textColor = DEFAULTS.textColor,
     fontSize,
-    backgroundImage = null,
+    backgroundImageBase64 = null,
     isError = false
   } = options;
 
+  // 배경 처리
   let backgroundContent;
-  if (backgroundImage) {
-    backgroundContent = `<image href="data:image/webp;base64,${backgroundImage}" x="0" y="0" width="${width}" height="${height}"/>`;
+  if (backgroundImageBase64) {
+    backgroundContent = `
+      <defs>
+        <pattern id="bgImage" patternUnits="userSpaceOnUse" width="${width}" height="${height}">
+          <image href="data:image/webp;base64,${backgroundImageBase64}" 
+                 x="0" y="0" width="${width}" height="${height}"
+                 preserveAspectRatio="xMidYMid slice"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#bgImage)"/>`;
   } else {
-    backgroundContent = `<rect width="100%" height="100%" fill="#e5e7eb"/>`;
+    backgroundContent = `<rect width="100%" height="100%" fill="#f3f4f6"/>`;
   }
 
+  // 텍스트 오버레이 처리
   let textContent = '';
   if (text) {
-    const boxHeight = height * 0.25;
+    const boxHeight = Math.max(60, height * 0.15);
     const boxY = height - boxHeight;
-    const textY = boxY + (boxHeight / 2);
-    const padding = width * 0.03;
-    const actualFontSize = fontSize || Math.max(16, Math.floor(width / 25));
+    const textY = boxY + (boxHeight / 2) + 5;
+    const padding = Math.max(20, width * 0.03);
+    const actualFontSize = fontSize || Math.max(16, Math.floor(width / 30));
     const textFill = isError ? '#ef4444' : textColor;
     
+    // 텍스트 길이에 따른 자동 줄바꿈 처리
+    const maxCharsPerLine = Math.floor((width - padding * 2) / (actualFontSize * 0.6));
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+      if ((currentLine + word).length <= maxCharsPerLine) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    
+    const lineHeight = actualFontSize * 1.2;
+    const totalTextHeight = lines.length * lineHeight;
+    const startY = textY - (totalTextHeight / 2) + (lineHeight / 2);
+    
+    const textElements = lines.map((line, index) => 
+      `<text x="${padding}" y="${startY + index * lineHeight}" 
+             font-family="system-ui, 'Segoe UI', Arial, sans-serif" 
+             font-size="${actualFontSize}" 
+             font-weight="600"
+             fill="${textFill}" 
+             text-anchor="start" 
+             dominant-baseline="middle">
+        ${line}
+      </text>`
+    ).join('');
+
     textContent = `
-      <rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor}"/>
-      <text x="${padding}" y="${textY}" 
-            font-family="system-ui, Arial, sans-serif" 
-            font-size="${actualFontSize}" 
-            font-weight="600"
-            fill="${textFill}" 
-            text-anchor="start" 
-            dominant-baseline="middle">
-        ${text}
-      </text>
+      <rect x="0" y="${boxY}" width="100%" height="${boxHeight}" 
+            fill="${bgColor}" opacity="0.85"/>
+      <g class="text-shadow">
+        ${textElements}
+      </g>
     `;
   }
 
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">
     <defs>
       <style>
-        .text-shadow { filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8)); }
+        .text-shadow { 
+          filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.8)); 
+        }
       </style>
     </defs>
     ${backgroundContent}
-    <g class="text-shadow">
-      ${textContent}
-    </g>
+    ${textContent}
   </svg>`;
-}
-
-// 🔑 캐시 키 생성 (동일한 파라미터 = 동일한 캐시)
-function generateCacheKey(params) {
-  const { bgImg, text, bgColor, textColor, fontSize, width, height } = params;
-  const keyData = {
-    bgImg: bgImg || '',
-    text: text || '',
-    bgColor: bgColor || DEFAULTS.bgColor,
-    textColor: textColor || DEFAULTS.textColor,
-    fontSize: fontSize || 'auto',
-    width: width || DEFAULTS.width,
-    height: height || DEFAULTS.height
-  };
-  
-  // 간단한 해시 생성
-  return Buffer.from(JSON.stringify(keyData)).toString('base64').slice(0, 16);
 }
 
 // 🚀 메인 핸들러
@@ -165,6 +225,7 @@ exports.handler = async (event) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
   };
 
   if (event.httpMethod === 'OPTIONS') {
@@ -175,7 +236,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 405,
       headers: corsHeaders,
-      body: 'Method not allowed'
+      body: JSON.stringify({ error: 'Method not allowed' })
     };
   }
 
@@ -191,28 +252,33 @@ exports.handler = async (event) => {
       height: customHeight
     } = params;
 
-    // 🔑 캐시 키로 요청 식별
-    const cacheKey = generateCacheKey(params);
-    console.log(`Processing request with cache key: ${cacheKey}`);
+    // 🔑 캐시 키들 생성
+    const finalCacheKey = generateFinalCacheKey(params);
+    const imageCacheKey = bgImg ? generateImageCacheKey(bgImg, customWidth, customHeight) : null;
+    
+    console.log(`Processing request - Final cache key: ${finalCacheKey}`);
+    if (imageCacheKey) {
+      console.log(`Background image cache key: ${imageCacheKey}`);
+    }
 
     let processedImage = null;
     let finalWidth = parseInt(customWidth) || DEFAULTS.width;
     let finalHeight = parseInt(customHeight) || DEFAULTS.height;
     let isError = false;
 
-    // 🖼️ 배경 이미지 처리
+    // 🖼️ 배경 이미지 처리 (별도 캐싱됨)
     if (bgImg) {
       try {
-        const result = await processImage(bgImg);
-        processedImage = result.buffer.toString('base64');
+        const result = await processBackgroundImage(bgImg, finalWidth, finalHeight);
+        processedImage = result.base64;
         
-        // 커스텀 크기가 없으면 원본 크기 사용
+        // 커스텀 크기가 없으면 처리된 이미지 크기 사용
         if (!customWidth && !customHeight) {
-          finalWidth = result.finalWidth;
-          finalHeight = result.finalHeight;
+          finalWidth = result.width;
+          finalHeight = result.height;
         }
         
-        console.log(`Background processed: ${finalWidth}x${finalHeight}`);
+        console.log(`Background processed successfully: ${finalWidth}x${finalHeight}`);
       } catch (error) {
         console.error('Background processing failed:', error.message);
         isError = true;
@@ -223,46 +289,47 @@ exports.handler = async (event) => {
     const svg = generateSVG({
       width: finalWidth,
       height: finalHeight,
-      text: isError ? 'Image loading failed' : text,
+      text: isError ? `❌ Image loading failed: ${bgImg}` : text,
       bgColor,
       textColor,
       fontSize: fontSize ? parseInt(fontSize) : null,
-      backgroundImage: processedImage,
+      backgroundImageBase64: processedImage,
       isError
     });
 
-    // 🔥 핵심: Durable Cache 헤더 설정
-    let response = {
+    // 🔥 Durable Cache 헤더 설정
+    const response = {
       statusCode: 200,
       headers: {
         ...corsHeaders,
         'Content-Type': 'image/svg+xml',
-        'X-Cache-Key': cacheKey, // 디버깅용
+        // 브라우저 캐시: 1년
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        // 🚀 Netlify Durable Cache: 영구 저장
+        'Netlify-CDN-Cache-Control': 'public, max-age=31536000, durable',
+        // 캐시 태그들 (무효화용)
+        'Netlify-Cache-Tag': imageCacheKey ? 
+          `final-${finalCacheKey}, image-${imageCacheKey}` : 
+          `final-${finalCacheKey}`,
+        // 디버깅 정보
+        'X-Cache-Key': finalCacheKey,
+        'X-Image-Cache-Key': imageCacheKey || 'none',
+        'X-Cache-Status': 'MISS', // 첫 요청시
       },
       body: svg
     };
 
-    // 🚀 cdn-cache-control 라이브러리로 Durable Cache 적용
-    response = addCacheHeaders(response, {
-      // 브라우저 캐시: 1년
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      // 🔥 CDN + Durable Cache: 영구!
-      'Netlify-CDN-Cache-Control': 'public, max-age=31536000, durable',
-      // 캐시 태그 (무효화용)
-      'Netlify-Cache-Tag': `image-${cacheKey}`,
-    });
-
-    console.log(`Response cached with durable flag: ${cacheKey}`);
+    console.log(`✅ Response generated with durable cache: ${finalCacheKey}`);
     return response;
 
   } catch (error) {
-    console.error('Handler error:', error);
+    console.error('❌ Handler error:', error);
     
     // 에러 상황에서도 기본 SVG 제공 (캐시하지 않음)
     const errorSvg = generateSVG({
       width: DEFAULTS.width,
       height: DEFAULTS.height,
-      text: 'Service temporarily unavailable',
+      text: `⚠️ Service Error: ${error.message}`,
       isError: true
     });
 
@@ -271,7 +338,7 @@ exports.handler = async (event) => {
       headers: {
         ...corsHeaders,
         'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'no-cache', // 에러는 캐시 안함
+        'Cache-Control': 'no-cache, no-store', // 에러는 캐시 안함
       },
       body: errorSvg
     };
