@@ -1,3 +1,10 @@
+# netlify.toml
+
 [functions]
   node_bundler = "esbuild"
+  # sharp 라이브러리 포함 설정은 그대로 둡니다.
   included_files = ["node_modules/sharp/**"]
+
+# ✨ --- 이 부분을 추가하거나 수정합니다 --- ✨
+[[builders]]
+  path = "/.netlify/builders/placeholder.js"
