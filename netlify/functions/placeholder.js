@@ -15,7 +15,7 @@ exports.handler = async function(event, context) {
       // 이렇게 하면 image-proxy의 강력한 CDN 캐시 정책을 활용할 수 있습니다.
       // ⚠️ 중요: 'YOUR_NETLIFY_SITE_URL'을 실제 Netlify 사이트의 기본 URL로 반드시 변경해주세요.
       // 예: https://my-awesome-site.netlify.app
-      const siteUrl = process.env.URL || 'YOUR_NETLIFY_SITE_URL'; 
+      const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app'; 
       const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
 
       const imageResponse = await fetch(proxyUrl);
