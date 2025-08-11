@@ -5,11 +5,7 @@ exports.handler = async function(event) {
 
   if (!bgImg) {
     const defaultSvg = `<svg width="600" height="400" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#ccc" /><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="24" fill="#555">bgImg parameter is required.</text></svg>`;
-    return { 
-        statusCode: 400, 
-        headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, 
-        body: defaultSvg 
-    };
+    return { statusCode: 400, headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, body: defaultSvg };
   }
 
   try {
@@ -22,26 +18,29 @@ exports.handler = async function(event) {
       throw new Error(`[optimized-bg 실패] ${errorBody}`);
     }
 
-    // 헤더에서 크기 정보를 가져옴
     const finalWidth = parseInt(imageResponse.headers.get('x-image-width'), 10);
     const finalHeight = parseInt(imageResponse.headers.get('x-image-height'), 10);
     if (isNaN(finalWidth) || isNaN(finalHeight)) {
-        throw new Error('Invalid image dimensions received from optimized-bg headers.');
+      throw new Error('Invalid image dimensions received from optimized-bg headers.');
     }
 
-    // 본문에서 Base64로 인코딩된 이미지 데이터를 텍스트로 읽어옵니다.
-    const imageBase64 = await imageResponse.text();
-    // 데이터 URI를 생성합니다.
+    // ✨ --- 여기가 모든 것을 해결하는 최종 수정 지점입니다 --- ✨
+    // 1. 응답 본문을 바이너리 데이터(Buffer)로 직접 읽어옵니다. (text()가 아님)
+    const imageBuffer = await imageResponse.buffer(); 
+    // 2. 이 바이너리 데이터를 Base64 텍스트로 다시 인코딩합니다.
+    const imageBase64 = imageBuffer.toString('base64');
+    
+    // 이제 데이터는 손상되지 않은 완벽한 상태입니다.
     const imageDataUri = `data:image/webp;base64,${imageBase64}`;
 
-    // SVG 요소들의 크기와 위치 계산
+    // SVG 요소 계산
     const boxHeight = finalHeight * 0.25;
     const boxY = finalHeight - boxHeight;
     const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
     const textPaddingX = finalWidth * 0.03;
     const textY = boxY + (boxHeight / 2);
 
-    // 이미지의 href에 데이터 URI를 직접 삽입하여 완전한 SVG를 생성합니다.
+    // 완전한 SVG 생성
     const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg"><image href="${imageDataUri}" x="0" y="0" width="100%" height="100%"/><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="middle">${text || ''}</text></svg>`;
 
     return {
@@ -49,34 +48,15 @@ exports.handler = async function(event) {
       headers: {
         'Content-Type': 'image/svg+xml',
         'Access-Control-Allow-Origin': '*',
-        // 최종 SVG는 텍스트가 바뀔 수 있으므로 캐시 시간을 적절히 설정합니다.
         'Cache-Control': 'public, max-age=3600, s-maxage=3600',
       },
       body: svg.trim(),
     };
 
   } catch (err) {
-    console.error(err); // Netlify 로그에 에러 기록
-    
-    // SVG 텍스트로 표시하기 위해 특수문자를 변환
+    // 디버깅용 에러 처리
     const errorMessage = err.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-    // 에러 메시지를 여러 줄로 표시하는 디버깅용 SVG 생성
-    const errorSvg = `
-<svg width="900" height="400" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100%" height="100%" fill="#f8d7da" />
-    <text x="15" y="35" font-family="monospace" font-size="14" fill="#721c24">
-        <tspan x="15" dy="1.2em">AN ERROR OCCURRED:</tspan>
-        <tspan x="15" dy="1.5em">${errorMessage.substring(0, 80)}</tspan>
-        <tspan x="15" dy="1.2em">${errorMessage.substring(80, 160)}</tspan>
-        <tspan x="15" dy="1.2em">${errorMessage.substring(160, 240)}</tspan>
-        <tspan x="15" dy="1.2em">${errorMessage.substring(240, 320)}</tspan>
-    </text>
-</svg>`;
-    return { 
-        statusCode: 500, 
-        headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, 
-        body: errorSvg.trim() 
-    };
+    const errorSvg = `<svg width="900" height="400" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f8d7da" /><text x="15" y="35" font-family="monospace" font-size="14" fill="#721c24"><tspan x="15" dy="1.2em">AN ERROR OCCURRED:</tspan><tspan x="15" dy="1.5em">${errorMessage.substring(0, 80)}</tspan></text></svg>`;
+    return { statusCode: 500, headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, body: errorSvg.trim() };
   }
-};   
+};
