@@ -1,18 +1,7 @@
 {
-  "name": "netlify-durable-image-cache",
+  "name": "netlify-svg-sharp-optimizer",
   "version": "1.0.0",
-  "description": "Netlify function for durable image caching with text overlay",
-  "main": "netlify/functions/durable-image.js",
   "dependencies": {
-    "sharp": "^0.33.4"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "scripts": {
-    "dev": "netlify dev",
-    "build": "netlify build",
-    "deploy": "netlify deploy",
-    "deploy:prod": "netlify deploy --prod"
+    "sharp": "^0.33.3"
   }
 }
