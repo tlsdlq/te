@@ -1,66 +1,46 @@
 // /netlify/functions/svg-generator.js
 const sharp = require('sharp');
 
-// ⚠️ 중요: 이 함수 파일 이름을 원래 사용하시던 이름으로 맞춰주세요.
-// 예: 원래 파일 이름이 `index.js`였다면 `svg-generator.js`를 `index.js`로 변경
 exports.handler = async function(event, context) {
   const { w, h, text = '', bgImg, bgColor, textColor, fontSize } = event.queryStringParameters;
 
   let finalWidth, finalHeight, backgroundContent = '', errorText = '';
+  
+  const siteUrl = process.env.URL || 'YOUR_NETLIFY_SITE_URL';
 
   if (bgImg) {
-    try {
-      // --- ✨ 핵심 변경점: 내부 프록시 함수 호출 ✨ ---
-      // 외부 이미지 URL을 직접 요청하는 대신, 우리 사이트의 image-proxy 함수를 호출합니다.
-      // 이렇게 하면 image-proxy의 강력한 CDN 캐시 정책을 활용할 수 있습니다.
-      // ⚠️ 중요: 'YOUR_NETLIFY_SITE_URL'을 실제 Netlify 사이트의 기본 URL로 반드시 변경해주세요.
-      // 예: https://my-awesome-site.netlify.app
-      const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app'; 
-      const proxyUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
+    // --- ✨ 여기가 핵심! ✨ ---
+    // 이미지를 처리해서 Base64로 만드는 대신, image-proxy의 URL을 생성합니다.
+    // 이 URL 자체가 이미지의 주소가 됩니다.
+    const imageUrl = `${siteUrl}/.netlify/functions/image-proxy?url=${encodeURIComponent(bgImg)}`;
 
-      const imageResponse = await fetch(proxyUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`Fetch via proxy failed: ${imageResponse.status}. Is the original image URL correct?`);
-      }
-      
-      const imageBuffer = await imageResponse.arrayBuffer();
-
-      // sharp를 이용한 이미지 최적화 로직은 그대로 유지됩니다.
-      const image = sharp(Buffer.from(imageBuffer));
-      const metadata = await image.metadata();
-
-      if (w && h) {
-        finalWidth = parseInt(w, 10);
-        finalHeight = parseInt(h, 10);
-      } else {
-        finalWidth = metadata.width;
-        finalHeight = metadata.height;
-      }
-
-      const optimizedBuffer = await image
-        .resize({ width: finalWidth, height: finalHeight, fit: 'cover' })
-        .webp({ quality: 80 })
-        .toBuffer();
-
-      const imageBase64 = optimizedBuffer.toString('base64');
-      const imageMimeType = 'image/webp';
-
-      backgroundContent = `<image href="data:${imageMimeType};base64,${imageBase64}" x="0" y="0" width="${finalWidth}" height="${finalHeight}" preserveAspectRatio="xMidYMid slice"/>`;
-
-    } catch (err) {
-      finalWidth = w ? parseInt(w, 10) : 600; 
-      finalHeight = h ? parseInt(h, 10) : 400; 
-      errorText = 'Image Load Error!';
-      backgroundContent = `<rect width="100%" height="100%" fill="#ccc" />`;
-      console.error(err);
+    // SVG의 <image> 태그에 Base64 데이터가 아닌, 위에서 만든 URL을 직접 연결합니다.
+    backgroundContent = `<image href="${imageUrl}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"/>`;
+    // ----------------------------------------------------
+    
+    // 너비와 높이 결정 로직은 그대로 필요할 수 있습니다.
+    // 만약 w, h 파라미터가 없다면, sharp로 메타데이터만 빠르게 읽어올 수 있습니다.
+    if (w && h) {
+      finalWidth = parseInt(w, 10);
+      finalHeight = parseInt(h, 10);
+    } else {
+      // 이 부분은 최초 다운로드 비용을 감수하고 정확한 크기를 얻고 싶을 때만 사용합니다.
+      // 대부분의 경우 w,h를 지정하는 것이 더 효율적입니다.
+      // 여기서는 w, h가 없으면 기본 크기를 사용하도록 단순화하겠습니다.
+      finalWidth = 600; 
+      finalHeight = 400;
+      // try-catch로 메타데이터만 읽어오는 로직을 추가할 수도 있습니다.
     }
+
   } else {
+    // 배경 이미지가 없을 때의 로직
     finalWidth = parseInt(w || '300', 10); 
     finalHeight = parseInt(h || '150', 10);
     backgroundContent = `<rect width="100%" height="100%" fill="#cccccc" />`;
   }
   
   // SVG 생성 로직
+  // (finalWidth, finalHeight가 결정된 후의 로직은 이전과 거의 동일합니다)
   const boxHeight = finalHeight * 0.25;
   const boxY = finalHeight - boxHeight;
   const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
@@ -72,8 +52,9 @@ exports.handler = async function(event, context) {
     statusCode: 200,
     headers: { 
       'Content-Type': 'image/svg+xml',
-      // ✨ 캐시 강화: CDN에 1일(86400초)간 캐시하도록 s-maxage 추가
-      'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+      // 이 SVG 자체는 캐시되면 안 됩니다. (텍스트가 계속 바뀌므로)
+      // 또는 짧게 캐시합니다.
+      'Cache-Control': 'public, max-age=0, must-revalidate',
     },
     body: svg,
   };
