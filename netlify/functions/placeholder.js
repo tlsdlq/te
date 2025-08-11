@@ -1,59 +1,65 @@
-exports.handler = async function(event, context) {
-  // 1. URL 파라미터를 읽습니다. (bgImg가 필수!)
-  const {
-    w, h, text = '', bgImg,
-    bgColor = 'rgba(0, 0, 0, 0.5)',
-    textColor = '#FFFFFF',
-    fontSize,
-  } = event.queryStringParameters;
+const sharp = require('sharp');
 
-  if (!bgImg) {
-    return {
-      statusCode: 400,
-      body: 'Error: bgImg parameter is required.'
-    };
+exports.handler = async function(event, context) {
+  const { w, h, text = '', bgImg, bgColor, textColor, fontSize } = event.queryStringParameters;
+
+  let finalWidth, finalHeight, backgroundContent = '', errorText = '';
+
+  if (bgImg) {
+    try {
+      const imageResponse = await fetch(bgImg);
+      if (!imageResponse.ok) throw new Error(`Fetch failed: ${imageResponse.status}`);
+      
+      const imageBuffer = await imageResponse.arrayBuffer();
+
+      // --- ✨ 여기가 핵심! sharp를 이용한 이미지 최적화 ✨ ---
+      const image = sharp(Buffer.from(imageBuffer));
+      
+      // 이미지 메타데이터(크기 등) 읽기
+      const metadata = await image.metadata();
+
+      // 크기 결정 로직
+      if (w && h) {
+        finalWidth = parseInt(w, 10);
+        finalHeight = parseInt(h, 10);
+      } else {
+        finalWidth = metadata.width;
+        finalHeight = metadata.height;
+      }
+
+      // 이미지를 최적화하여 새로운 버퍼 생성
+      const optimizedBuffer = await image
+        .resize({ width: finalWidth, height: finalHeight, fit: 'cover' }) // 크기 조절
+        .webp({ quality: 80 }) // 가벼운 WebP 포맷으로, 품질 80%로 압축
+        .toBuffer();
+      // ----------------------------------------------------
+
+      const imageBase64 = optimizedBuffer.toString('base64');
+      const imageMimeType = 'image/webp'; // 포맷을 webp로 고정
+
+      backgroundContent = `<image href="data:${imageMimeType};base64,${imageBase64}" x="0" y="0" width="${finalWidth}" height="${finalHeight}" preserveAspectRatio="xMidYMid slice"/>`;
+
+    } catch (err) {
+      finalWidth = 600; finalHeight = 400; errorText = 'Image Load/Optimize Error!';
+      backgroundContent = `<rect width="100%" height="100%" fill="#ccc" />`;
+      console.error(err);
+    }
+  } else {
+    finalWidth = parseInt(w || '300', 10); finalHeight = parseInt(h || '150', 10);
+    backgroundContent = `<rect width="100%" height="100%" fill="#cccccc" />`;
   }
   
-  // 2. 최종 이미지 크기를 결정합니다. w,h가 없으면 기본값을 사용합니다.
-  const finalWidth = parseInt(w || '800', 10);
-  const finalHeight = parseInt(h || '400', 10);
-
-  // --- ✨ 여기가 궁극의 해결책! Netlify 이미지 변환 CDN 사용 ✨ ---
-  // /.netlify/images?url=...&w=...&h=...&fit=cover
-  // 이 특수 주소는 Netlify가 bgImg를 가져와서, 자동으로 최적화하고,
-  // finalWidth와 finalHeight에 맞춰 리사이징한 후, CDN을 통해 제공합니다.
-  const optimizedImageUrl = `/.netlify/images?url=${encodeURIComponent(bgImg)}&w=${finalWidth}&h=${finalHeight}&fit=cover`;
-  // -----------------------------------------------------------
-
-  // SVG는 이제 외부 이미지를 '링크'하기만 합니다. Base64 인코딩이 없습니다!
-  const backgroundContent = `<image href="${optimizedImageUrl}" x="0" y="0" width="100%" height="100%" />`;
-
-  // 3. 텍스트 및 박스 크기 계산 (이전과 동일)
+  // (SVG 생성 로직은 이전과 동일)
   const boxHeight = finalHeight * 0.25;
   const boxY = finalHeight - boxHeight;
   const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
   const textPaddingX = finalWidth * 0.03;
   const textY = boxY + (boxHeight / 2);
-
-  // 4. 최종 SVG 코드 생성 (매우 가벼움)
-  const svg = `
-    <svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg">
-      ${backgroundContent}
-      ${text ? `
-        <rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor}" />
-        <text x="${textPaddingX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor}" text-anchor="start" dominant-baseline="middle">
-          ${text}
-        </text>
-      ` : ''}
-    </svg>
-  `;
+  const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg">${backgroundContent}${text || errorText ? `<rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="middle">${errorText || text}</text>` : ''}</svg>`;
 
   return {
     statusCode: 200,
-    headers: {
-      'Content-Type': 'image/svg+xml',
-      'Cache-Control': 'public, max-age=86400', // 하루 동안 캐시
-    },
+    headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600' },
     body: svg,
   };
 };
