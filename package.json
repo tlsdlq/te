@@ -1,4 +1,7 @@
 {
-  "name": "netlify-svg-final-optimizer",
-  "version": "1.0.0"
+  "name": "netlify-svg-sharp-optimizer",
+  "version": "1.0.0",
+  "dependencies": {
+    "sharp": "^0.33.3"
+  }
 }
