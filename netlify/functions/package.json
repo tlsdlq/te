@@ -1,7 +1,7 @@
 {
-  "name": "final-svg-maker-on-web",
+  "name": "netlify-svg-generator-on-web",
   "version": "1.0.0",
   "dependencies": {
-    "image-size": "^1.0.2"
+    "image-size": "^1.1.1"
   }
 }
