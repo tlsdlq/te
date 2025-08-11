@@ -4,7 +4,6 @@ const fetch = require('node-fetch');
 
 exports.handler = async function(event) {
   const { bgImg, text, bgColor, textColor, fontSize } = event.queryStringParameters;
-  if (!bgImg) { /* ... 에러 처리 ... */ }
 
   try {
     const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
