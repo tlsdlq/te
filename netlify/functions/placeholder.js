@@ -31,14 +31,12 @@ exports.handler = async function(event) {
             throw new Error('bgImg parameter is required.');
         }
 
-        // 1. 원본 이미지 다운로드
         const originalImageResponse = await fetch(decodeURIComponent(bgImg));
         if (!originalImageResponse.ok) {
             throw new Error(`Failed to fetch original image: ${originalImageResponse.status}`);
         }
         const imageBuffer = await originalImageResponse.buffer();
 
-        // 2. 버퍼에서 이미지 크기 정보만 빠르게 추출
         const dimensions = imageSize(imageBuffer);
         const finalWidth = dimensions.width;
         const finalHeight = dimensions.height;
@@ -48,7 +46,12 @@ exports.handler = async function(event) {
         }
 
         const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
-        const optimizedBgUrl = `${siteUrl}/.netlify/functions/optimized-bg?bgImg=${encodeURIComponent(bgImg)}`;
+        // 1. 원본 Netlify 함수 이미지 URL을 생성합니다.
+        const netlifyImageUrl = `${siteUrl}/.netlify/functions/optimized-bg?bgImg=${encodeURIComponent(bgImg)}`;
+
+        // 2. 이미지 프록시 서비스 URL로 원본 URL을 감쌉니다.
+        const proxyPrefix = 'https://images.weserv.nl/?url=';
+        const proxiedImageUrl = `${proxyPrefix}${encodeURIComponent(netlifyImageUrl)}`;
 
         const boxHeight = finalHeight * 0.25;
         const boxY = finalHeight - boxHeight;
@@ -64,7 +67,8 @@ exports.handler = async function(event) {
             return `<tspan x="${textPaddingX}" dy="${dy}">${line.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</tspan>`;
         }).join('');
 
-        const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg"><image href="${optimizedBgUrl}" x="0" y="0" width="100%" height="100%"/><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textBlockStartY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="hanging">${textElements}</text></svg>`;
+        // 3. 최종 SVG의 <image> 태그에 프록시 처리된 URL을 사용합니다.
+        const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg"><image href="${proxiedImageUrl}" x="0" y="0" width="100%" height="100%"/><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textBlockStartY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="hanging">${textElements}</text></svg>`;
 
         return {
             statusCode: 200,
