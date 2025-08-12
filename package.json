@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "dependencies": {
     "sharp": "^0.33.3",
-    "node-fetch": "^2.7.0",
-    "image-size": "^1.1.1"
+    "node-fetch": "^2.7.0"
   }
 }
