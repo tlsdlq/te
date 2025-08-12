@@ -1,94 +1,49 @@
+const sharp = require('sharp');
 const fetch = require('node-fetch');
-const imageSize = require('image-size');
-
-// wrapText 헬퍼 함수는 그대로 유지합니다. (코드가 길어 생략)
-function wrapText(text, maxWidth, fontSize) {
-    const avgCharWidth = fontSize * 0.5;
-    const maxCharsPerLine = Math.floor(maxWidth / avgCharWidth);
-    const words = text.split(' ');
-    const lines = [];
-    let currentLine = '';
-    for (const word of words) {
-        if (currentLine.length === 0) {
-            currentLine = word;
-        } else if (currentLine.length + word.length + 1 <= maxCharsPerLine) {
-            currentLine += ' ' + word;
-        } else {
-            lines.push(currentLine);
-            currentLine = word;
-        }
-    }
-    if (currentLine) {
-        lines.push(currentLine);
-    }
-    return lines.length > 0 ? lines : [''];
-}
 
 exports.handler = async function(event) {
-    const { bgImg, text, bgColor, textColor, fontSize } = event.queryStringParameters;
+  const { bgImg } = event.queryStringParameters;
+  if (!bgImg) return { statusCode: 400, body: 'Error: bgImg parameter is required.' };
 
-    try {
-        if (!bgImg) {
-            throw new Error('bgImg parameter is required.');
-        }
-
-        // --- 변경점: 이미지 크기 직접 계산 ---
-        // 1. 원본 이미지 다운로드
-        const originalImageResponse = await fetch(decodeURIComponent(bgImg));
-        if (!originalImageResponse.ok) {
-            throw new Error(`Failed to fetch original image: ${originalImageResponse.status}`);
-        }
-        const imageBuffer = await originalImageResponse.buffer();
-
-        // 2. 버퍼에서 이미지 크기 정보만 빠르게 추출
-        const dimensions = imageSize(imageBuffer);
-        const finalWidth = dimensions.width;
-        const finalHeight = dimensions.height;
-        // --- 변경점 끝 ---
-
-        if (!finalWidth || !finalHeight) {
-            throw new Error('Could not determine image dimensions.');
-        }
-
-        const siteUrl = process.env.URL || 'https://cool-dusk-cb5c8e.netlify.app';
-        // SVG에 삽입될 최종 이미지 URL은 이전과 동일하게 optimized-bg를 가리킵니다.
-        const optimizedBgUrl = `${siteUrl}/.netlify/functions/optimized-bg?bgImg=${encodeURIComponent(bgImg)}`;
-
-        // 텍스트 및 SVG 요소 계산 로직은 이전과 동일합니다.
-        const boxHeight = finalHeight * 0.25;
-        const boxY = finalHeight - boxHeight;
-        const finalFontSize = fontSize ? parseInt(fontSize, 10) : Math.floor(finalWidth / 28);
-        const textPaddingX = finalWidth * 0.03;
-        const textMaxWidth = finalWidth - (textPaddingX * 2);
-        const textLines = wrapText(text || '', textMaxWidth, finalFontSize);
-        const lineHeight = finalFontSize * 1.2;
-        const totalTextHeight = textLines.length * lineHeight;
-        const textBlockStartY = boxY + (boxHeight - totalTextHeight) / 2;
-        const textElements = textLines.map((line, index) => {
-            const dy = index === 0 ? 0 : `${lineHeight}px`;
-            return `<tspan x="${textPaddingX}" dy="${dy}">${line.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</tspan>`;
-        }).join('');
-
-        const svg = `<svg width="${finalWidth}" height="${finalHeight}" xmlns="http://www.w3.org/2000/svg"><image href="${optimizedBgUrl}" x="0" y="0" width="100%" height="100%"/><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="${bgColor || 'rgba(0,0,0,0.5)'}" /><text x="${textPaddingX}" y="${textBlockStartY}" font-family="Arial, sans-serif" font-size="${finalFontSize}" fill="${textColor || '#FFFFFF'}" text-anchor="start" dominant-baseline="hanging">${textElements}</text></svg>`;
-
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'image/svg+xml',
-                'Access-Control-Allow-Origin': '*',
-                'Cache-Control': 'public, max-age=3600, s-maxage=3600',
-            },
-            body: svg.trim(),
-        };
-
-    } catch (err) {
-        // 오류 처리 SVG는 그대로 유지합니다.
-        const errorMessage = err.message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const errorSvg = `<svg width="900" height="400" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#f8d7da" /><text x="15" y="35" font-family="monospace" font-size="14" fill="#721c24"><tspan x="15" dy="1.2em">AN ERROR OCCURRED:</tspan><tspan x="15" dy="1.5em">${errorMessage.substring(0, 80)}</tspan><tspan x="15" dy="1.2em">${errorMessage.substring(80, 160)}</tspan></text></svg>`;
-        return { 
-            statusCode: 500, 
-            headers: { 'Content-Type': 'image/svg+xml', 'Access-Control-Allow-Origin': '*' }, 
-            body: errorSvg.trim() 
-        };
+  try {
+    const imageUrl = decodeURIComponent(bgImg);
+    const fetchOptions = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+      }
+    };
+    
+    const imageResponse = await fetch(imageUrl, fetchOptions);
+    if (!imageResponse.ok) {
+      throw new Error(`Original image fetch failed: ${imageResponse.status}`);
     }
+    
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const image = sharp(Buffer.from(imageBuffer));
+    
+    const metadata = await image.metadata();
+    const { width, height } = metadata;
+
+    const optimizedBuffer = await image.webp({ quality: 80 }).toBuffer();
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'image/webp',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
+        'X-Image-Width': String(width),
+        'X-Image-Height': String(height),
+      },
+      body: optimizedBuffer.toString('base64'),
+      isBase64Encoded: true,
+    };
+
+  } catch (err) {
+    return { 
+      statusCode: 500, 
+      headers: { 'Content-Type': 'text/plain' },
+      body: `Error in optimized-bg: ${err.message}` 
+    };
+  }
 };
