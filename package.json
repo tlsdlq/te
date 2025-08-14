@@ -1,0 +1,14 @@
+{
+  "name": "my-image-generator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler pages deploy"
+  },
+  "dependencies": {
+    "wasm-vips": "^1.2.0" 
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
