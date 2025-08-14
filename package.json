@@ -6,7 +6,7 @@
     "deploy": "wrangler pages deploy"
   },
   "dependencies": {
-    "wasm-vips": "^1.2.0" 
+    "wasm-vips": "^^0.0.14" 
   },
   "devDependencies": {
     "wrangler": "^3.0.0"
