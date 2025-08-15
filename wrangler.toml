@@ -2,4 +2,4 @@ name = "tls-tlsdlq" # Or "tls" to match the CI warning
 main = "index.js"
 compatibility_date = "2025-08-14" # Or your existing date
 
-# [추가] Node.js 호환성 플래그를 여기에 추가하세요.
+compatibility_flags = ["nodejs_compat"]
