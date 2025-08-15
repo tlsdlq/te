@@ -1,5 +1,4 @@
-// [중요!] 이 import 구문이 파일 최상단에 반드시 있어야 합니다.
-import { Buffer } from 'node:buffer';
+// [최종 수정] 모든 의존성을 제거한 최종 코드입니다.
 
 // --- [보안 설정] 이미지 URL 허용 목록 ---
 const ALLOWED_IMAGE_HOSTS = [
@@ -64,6 +63,32 @@ export default {
 
 // --- 헬퍼 함수들 ---
 
+// [핵심 수정] 의존성 없고 100% 안전한 Base64 인코더
+function arrayBufferToBase64(buffer) {
+    const b64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    const bytes = new Uint8Array(buffer);
+    let result = '';
+    let i;
+    const len = bytes.length;
+    for (i = 0; i < len; i += 3) {
+        const a = bytes[i];
+        const b = i + 1 < len ? bytes[i + 1] : 0;
+        const c = i + 2 < len ? bytes[i + 2] : 0;
+
+        const index1 = a >> 2;
+        const index2 = ((a & 3) << 4) | (b >> 4);
+        const index3 = ((b & 15) << 2) | (c >> 6);
+        const index4 = c & 63;
+
+        result += b64.charAt(index1);
+        result += b64.charAt(index2);
+        result += i + 1 < len ? b64.charAt(index3) : '=';
+        result += i + 2 < len ? b64.charAt(index4) : '=';
+    }
+    return result;
+}
+
+
 async function fetchAndProcessImage(url, ctx) {
   const cache = caches.default;
   const cacheKey = new Request(url.toString(), { headers: { 'Accept': 'image/*' }});
@@ -80,8 +105,7 @@ async function fetchAndProcessImage(url, ctx) {
 
   const image = {
     contentType,
-    // [핵심] Buffer를 사용하여 안전하게 Base64로 변환
-    base64: Buffer.from(buffer).toString('base64')
+    base64: arrayBufferToBase64(buffer) // 새로 만든 안전한 인코더 사용
   };
   
   const view = new DataView(buffer);
@@ -93,13 +117,14 @@ async function fetchAndProcessImage(url, ctx) {
       } else if (view.getUint32(0, false) === 0x89504E47) {
         dimensions = { width: view.getUint32(16, false), height: view.getUint32(20, false) };
       }
-  } catch(e) { /* 크기 분석 실패 시 기본값 사용 */ }
+  } catch(e) {}
 
   const result = { image, width: dimensions.width, height: dimensions.height };
   ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(result), { headers: { 'Cache-Control': 'public, max-age=2592000' } })));
   return result;
 }
 
+// ... 나머지 헬퍼 함수들은 변경 없음 ...
 function generateErrorSvgResponse({ width, height, lines, fontSize }) { const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5); const boxY = (height - boxHeight) / 2; const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style></defs><rect x="0" y="0" width="100%" height="100%" fill="#555" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" /><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="caption">${lines.map((line, index) => `<tspan x="${PADDING}" dy="${index === 0 ? '0' : `${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`; return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });}
 function escapeXml(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c])); }
 function wrapText(text, maxWidth, fontSize) { const words = text.split(' '); const lines = []; let currentLine = words[0] || ''; const avgCharWidth = fontSize * 0.55; for (let i = 1; i < words.length; i++) { const word = words[i]; if ((currentLine + " " + word).length * avgCharWidth < maxWidth) { currentLine += " " + word; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; }
