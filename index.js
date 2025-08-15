@@ -1,3 +1,4 @@
+// [중요!] 이 import 구문이 파일 최상단에 반드시 있어야 합니다.
 import { Buffer } from 'node:buffer';
 
 // --- [보안 설정] 이미지 URL 허용 목록 ---
@@ -19,12 +20,12 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 // --- 메인 핸들러 ---
 export default {
   async fetch(request, env, ctx) {
-    // ... 이전과 동일 ...
     const url = new URL(request.url);
     const params = url.searchParams;
     const imageUrl = params.get('img');
     const text = params.get('text');
     const name = params.get('name');
+    
     if (imageUrl) {
         try {
             const imageUrlObject = new URL(imageUrl);
@@ -35,6 +36,7 @@ export default {
             return new Response(errorMessage, { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
         }
     }
+    
     if (!imageUrl || !text) {
         const usageImageUrl = 'https://images.unsplash.com/photo-1484417894907-623942c8ee29?w=1200';
         const usageText = "Usage: ?img=<ALLOWED_URL>&text=<TEXT>&name=<NAME>";
@@ -43,6 +45,7 @@ export default {
         const lines = wrapText(usageText, width - PADDING * 2, fontSize);
         return generateSvgResponse({ width, height, imageUrl, image, lines, fontSize, name: "Example" });
     }
+    
     try {
         const { image, width, height } = await fetchAndProcessImage(imageUrl, ctx);
         const fontSize = Math.max(20, height * FONT_SIZE_RATIO);
@@ -77,11 +80,10 @@ async function fetchAndProcessImage(url, ctx) {
 
   const image = {
     contentType,
-    // [핵심 수정] Buffer를 사용하여 안전하게 Base64로 변환
+    // [핵심] Buffer를 사용하여 안전하게 Base64로 변환
     base64: Buffer.from(buffer).toString('base64')
   };
   
-  // ... 이미지 크기 분석 로직은 이전과 동일 ...
   const view = new DataView(buffer);
   let dimensions = { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
   try {
@@ -98,9 +100,6 @@ async function fetchAndProcessImage(url, ctx) {
   return result;
 }
 
-// [삭제] 문제가 되었던 arrayBufferToBase64 함수는 이제 필요 없습니다.
-
-// ... 나머지 헬퍼 함수들은 변경 없이 그대로 사용 ...
 function generateErrorSvgResponse({ width, height, lines, fontSize }) { const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5); const boxY = (height - boxHeight) / 2; const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style></defs><rect x="0" y="0" width="100%" height="100%" fill="#555" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" /><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="caption">${lines.map((line, index) => `<tspan x="${PADDING}" dy="${index === 0 ? '0' : `${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`; return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });}
 function escapeXml(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c])); }
 function wrapText(text, maxWidth, fontSize) { const words = text.split(' '); const lines = []; let currentLine = words[0] || ''; const avgCharWidth = fontSize * 0.55; for (let i = 1; i < words.length; i++) { const word = words[i]; if ((currentLine + " " + word).length * avgCharWidth < maxWidth) { currentLine += " " + word; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; }
