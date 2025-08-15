@@ -13,7 +13,7 @@ const FONT_SIZE_RATIO = 0.04;
 const LINE_HEIGHT = 1.4;
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-// --- 메인 핸들러 ---
+// --- 메인 핸들러: Cloudflare Workers의 진입점 ---
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -61,8 +61,7 @@ export default {
   },
 };
 
-// --- 헬퍼 함수 ---
-// (아래 함수들은 변경 없이 그대로 사용)
+// --- 헬퍼 함수들 (변경 없음) ---
 
 function escapeXml(unsafe) {
   return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c]));
@@ -86,7 +85,7 @@ function wrapText(text, maxWidth, fontSize) {
   return lines;
 }
 
-async function getImageDimensions(url, ctx) { // 'context' -> 'ctx'
+async function getImageDimensions(url, ctx) {
   const cache = caches.default;
   const cacheKey = new Request(url.toString() + '-dimensions');
   let cachedResponse = await cache.match(cacheKey);
@@ -113,7 +112,6 @@ async function getImageDimensions(url, ctx) { // 'context' -> 'ctx'
     }
     
     if (dimensions) {
-      // ctx.waitUntil을 사용하여 백그라운드에서 캐시 작업을 수행
       ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(dimensions), { headers: { 'Cache-Control': 'public, max-age=2592000' } })));
       return dimensions;
     }
