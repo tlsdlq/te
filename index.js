@@ -1,4 +1,4 @@
-// [최종 수정] 모든 의존성을 제거한 최종 코드입니다.
+import { Buffer } from 'node:buffer';
 
 // --- [보안 설정] 이미지 URL 허용 목록 ---
 const ALLOWED_IMAGE_HOSTS = [
@@ -16,9 +16,13 @@ const FONT_SIZE_RATIO = 0.04;
 const LINE_HEIGHT = 1.4;
 const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
+// [핵심] XML에서 허용되지 않는 제어 문자를 제거하는 정규식
+const STRIP_CONTROL_CHARS_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+
 // --- 메인 핸들러 ---
 export default {
   async fetch(request, env, ctx) {
+    // 이 부분은 이전과 완전히 동일합니다.
     const url = new URL(request.url);
     const params = url.searchParams;
     const imageUrl = params.get('img');
@@ -63,32 +67,7 @@ export default {
 
 // --- 헬퍼 함수들 ---
 
-// [핵심 수정] 의존성 없고 100% 안전한 Base64 인코더
-function arrayBufferToBase64(buffer) {
-    const b64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-    const bytes = new Uint8Array(buffer);
-    let result = '';
-    let i;
-    const len = bytes.length;
-    for (i = 0; i < len; i += 3) {
-        const a = bytes[i];
-        const b = i + 1 < len ? bytes[i + 1] : 0;
-        const c = i + 2 < len ? bytes[i + 2] : 0;
-
-        const index1 = a >> 2;
-        const index2 = ((a & 3) << 4) | (b >> 4);
-        const index3 = ((b & 15) << 2) | (c >> 6);
-        const index4 = c & 63;
-
-        result += b64.charAt(index1);
-        result += b64.charAt(index2);
-        result += i + 1 < len ? b64.charAt(index3) : '=';
-        result += i + 2 < len ? b64.charAt(index4) : '=';
-    }
-    return result;
-}
-
-
+// Base64 인코딩 부분은 Buffer를 사용하는 것이 가장 안정적이므로 그대로 둡니다.
 async function fetchAndProcessImage(url, ctx) {
   const cache = caches.default;
   const cacheKey = new Request(url.toString(), { headers: { 'Accept': 'image/*' }});
@@ -105,7 +84,7 @@ async function fetchAndProcessImage(url, ctx) {
 
   const image = {
     contentType,
-    base64: arrayBufferToBase64(buffer) // 새로 만든 안전한 인코더 사용
+    base64: Buffer.from(buffer).toString('base64')
   };
   
   const view = new DataView(buffer);
@@ -124,8 +103,41 @@ async function fetchAndProcessImage(url, ctx) {
   return result;
 }
 
-// ... 나머지 헬퍼 함수들은 변경 없음 ...
-function generateErrorSvgResponse({ width, height, lines, fontSize }) { const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5); const boxY = (height - boxHeight) / 2; const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style></defs><rect x="0" y="0" width="100%" height="100%" fill="#555" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" /><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="caption">${lines.map((line, index) => `<tspan x="${PADDING}" dy="${index === 0 ? '0' : `${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`; return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });}
+// SVG를 생성하는 모든 함수에 최종 필터링을 적용합니다.
+function generateErrorSvgResponse({ width, height, lines, fontSize }) {
+    const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5);
+    const boxY = (height - boxHeight) / 2;
+    const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style></defs><rect x="0" y="0" width="100%" height="100%" fill="#555" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" /><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="caption">${lines.map((line, index) => `<tspan x="${PADDING}" dy="${index === 0 ? '0' : `${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`;
+    
+    // [핵심] 보내기 전에 최종 결과물에서 모든 제어 문자를 제거합니다.
+    const sanitizedSvg = svg.replace(STRIP_CONTROL_CHARS_REGEX, '');
+    return new Response(sanitizedSvg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });
+}
+
+function generateSvgResponse({ width, height, imageUrl, image, lines, fontSize, name }) {
+    const imageHref = image.base64 ? `data:${image.contentType};base64,${image.base64}` : escapeXml(imageUrl);
+    const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5) + (name ? fontSize : 0);
+    const boxY = height - boxHeight;
+    let nameElements = '';
+    if (name) {
+        const nameFontSize = fontSize * 0.75;
+        const nameBoxHeight = nameFontSize * 1.8;
+        const nameTextWidth = name.length * nameFontSize * 0.6;
+        const nameBoxPadding = nameFontSize * 0.8;
+        const p1 = `0,${boxY}`;
+        const p2 = `${nameTextWidth + nameBoxPadding * 2},${boxY}`;
+        const p3 = `${nameTextWidth + nameBoxPadding * 2 + nameBoxHeight * 0.5},${boxY + nameBoxHeight}`;
+        const p4 = `0,${boxY + nameBoxHeight}`;
+        nameElements = `<polygon points="${p1} ${p2} ${p3} ${p4}" fill="rgba(255,255,255,0.25)"/><text x="${nameBoxPadding}" y="${boxY + nameBoxHeight / 2}" class="name-caption" dominant-baseline="central">${escapeXml(name)}</text>`;
+    }
+    const textOffsetY = name ? fontSize * 1.5 : PADDING * 0.5;
+    const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}.name-caption{font-family:${FONT_FAMILY};font-size:${fontSize*0.75}px;fill:white;font-weight:700;}</style></defs><image href="${imageHref}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" />${nameElements}<text x="${PADDING}" y="${boxY+textOffsetY+fontSize}" class="caption">${lines.map((line,index)=>`<tspan x="${PADDING}" dy="${index===0?'0':`${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`;
+    
+    // [핵심] 보내기 전에 최종 결과물에서 모든 제어 문자를 제거합니다.
+    const sanitizedSvg = svg.replace(STRIP_CONTROL_CHARS_REGEX, '');
+    return new Response(sanitizedSvg, { headers: { 'Content-Type':'image/svg+xml; charset=utf-8', 'Cache-Control':'public, max-age=86400, s-maxage=2592000' } });
+}
+
+// 나머지 헬퍼 함수들은 이전과 동일합니다.
 function escapeXml(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c])); }
 function wrapText(text, maxWidth, fontSize) { const words = text.split(' '); const lines = []; let currentLine = words[0] || ''; const avgCharWidth = fontSize * 0.55; for (let i = 1; i < words.length; i++) { const word = words[i]; if ((currentLine + " " + word).length * avgCharWidth < maxWidth) { currentLine += " " + word; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; }
-function generateSvgResponse({ width, height, imageUrl, image, lines, fontSize, name }) { const imageHref = image.base64 ? `data:${image.contentType};base64,${image.base64}` : escapeXml(imageUrl); const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5) + (name ? fontSize : 0); const boxY = height - boxHeight; let nameElements = ''; if (name) { const nameFontSize = fontSize * 0.75; const nameBoxHeight = nameFontSize * 1.8; const nameTextWidth = name.length * nameFontSize * 0.6; const nameBoxPadding = nameFontSize * 0.8; const p1 = `0,${boxY}`; const p2 = `${nameTextWidth + nameBoxPadding * 2},${boxY}`; const p3 = `${nameTextWidth + nameBoxPadding * 2 + nameBoxHeight * 0.5},${boxY + nameBoxHeight}`; const p4 = `0,${boxY + nameBoxHeight}`; nameElements = `<polygon points="${p1} ${p2} ${p3} ${p4}" fill="rgba(255,255,255,0.25)"/><text x="${nameBoxPadding}" y="${boxY + nameBoxHeight / 2}" class="name-caption" dominant-baseline="central">${escapeXml(name)}</text>`; } const textOffsetY = name ? fontSize * 1.5 : PADDING * 0.5; const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><defs><style>.caption{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}.name-caption{font-family:${FONT_FAMILY};font-size:${fontSize*0.75}px;fill:white;font-weight:700;}</style></defs><image href="${imageHref}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" /><rect x="0" y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)" />${nameElements}<text x="${PADDING}" y="${boxY+textOffsetY+fontSize}" class="caption">${lines.map((line,index)=>`<tspan x="${PADDING}" dy="${index===0?'0':`${LINE_HEIGHT}em`}">${escapeXml(line)}</tspan>`).join('')}</text></svg>`; return new Response(svg, { headers: { 'Content-Type':'image/svg+xml; charset=utf-8', 'Cache-Control':'public, max-age=86400, s-maxage=2592000' } }); }
