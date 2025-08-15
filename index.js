@@ -3,6 +3,7 @@ const ALLOWED_IMAGE_HOSTS = [
   'images.unsplash.com',
   'i.imgur.com',
   'raw.githubusercontent.com',
+  'itimg.kr'
 ];
 
 // --- 설정 ---
