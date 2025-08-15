@@ -1,0 +1,3 @@
+name = "tls-tlsdlq" # 워커 이름 (Cloudflare 대시보드와 일치)
+main = "index.js" # 진입점 파일
+compatibility_date = "2025-08-14"
