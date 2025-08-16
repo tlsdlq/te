@@ -12,28 +12,11 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 export default {
   async fetch(request, env, ctx) {
-    const getETag = async (data) => {
-      const hashBuffer = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(data));
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return `"${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}"`;
-    };
-
     const url = new URL(request.url);
     const params = url.searchParams;
-
-    // --- ETag 생성 로직 개선 ---
-    const imgUrl = params.get('img') || '';
-    const text = params.get('text') || '';
-    const name = params.get('name') || '';
-    const etagSource = `${imgUrl}|${text}|${name}`;
-    // --- ---
-
-    const etag = await getETag(etagSource);
-
-    const ifNoneMatch = request.headers.get('If-None-Match');
-    if (ifNoneMatch && ifNoneMatch === etag) {
-      return new Response(null, { status: 304 });
-    }
+    const imgUrl = params.get('img');
+    const text = params.get('text');
+    const name = params.get('name');
 
     if (imgUrl) {
       try {
@@ -69,9 +52,7 @@ export default {
         lines = wrap(text, availableWidth, fontSize, TW);
       }
 
-      const response = createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
-      response.headers.set('ETag', etag);
-      return response;
+      return createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
 
     } catch (error) {
       console.error('Image processing failed:', error);
@@ -196,11 +177,11 @@ function createSvg({ width, height, imageUrl, image, lines, fontSize, name }) {
   return new Response(svg, {
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=604800, immutable'
+      'Cache-Control': 'public, max-age=2592000, immutable' // 30일 캐시
     },
     cf: {
       cacheEverything: true,
-      cacheTtl: 2592000
+      cacheTtl: 2592000 // Cloudflare 엣지에 30일 캐시
     }
   });
 }
