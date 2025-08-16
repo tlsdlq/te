@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 
 const CACHE_VER = 'v1';
-const ALLOWED_HOSTS = ['images.unsplash.com', 'i.imgur.com', 'raw.githubusercontent.com', 'itimg.kr'];
+const ALLOWED_HOSTS = ['unsplash.com', 'i.imgur.com', 'raw.githubusercontent.com', 'itimg.kr'];
 const MAX_SIZE = 10 * 1024 * 1024;
 const DEF_WIDTH = 1200;
 const DEF_HEIGHT = 630;
