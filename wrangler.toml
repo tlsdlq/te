@@ -1,5 +1,0 @@
-name = "tls-tlsdlq" # Or "tls" to match the CI warning
-main = "index.js"
-compatibility_date = "2025-08-14" # Or your existing date
-
-compatibility_flags = ["nodejs_compat"]
