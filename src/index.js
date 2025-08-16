@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer';
 
 const CACHE_VER = 'v1';
-const ALLOWED_HOSTS = ['unsplash.com', 'i.imgur.com', 'raw.githubusercontent.com', 'itimg.kr'];
-const MAX_SIZE = 10 * 1024 * 1024;
+const ALLOWED_HOSTS = ['unsplash.com', 'i.imgur.com', 'raw.githubusercontent.com', 'itimg.kr']; //허용링크-보안
+const MAX_SIZE = 10 * 1024 * 1024; //10MB
 const DEF_WIDTH = 1200;
 const DEF_HEIGHT = 630;
 const PADDING = 40;
@@ -12,9 +12,7 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 export default {
   async fetch(request, env, ctx) {
-    // 이 fetch 함수는 Cloudflare 엣지 네트워크에 캐시가 없을 때,
-    // 단 한 번만 실행됩니다.
-    // 두 번째 요청부터는 이 코드는 아예 실행조차 되지 않습니다.
+
     try {
       const url = new URL(request.url);
       const params = url.searchParams;
@@ -33,7 +31,6 @@ export default {
       }
 
       if (!imgUrl || !text) {
-        // 사용법 안내 페이지는 캐시를 짧게 설정하거나 하지 않습니다.
         const usageImg = 'https://images.unsplash.com/photo-14844178942c8ee29?w=1200';
         const usageText = "Usage: ?img=<ALLOWED_URL>&text=<TEXT>&name=<NAME>";
         const image = { contentType: 'image/jpeg', base64: '' };
@@ -53,7 +50,6 @@ export default {
         lines = wrap(text, availableWidth, fontSize, TW);
       }
       
-      // 생성된 SVG 응답을 반환합니다. 이 응답에는 Cloudflare를 위한 '명령서'가 포함됩니다.
       return createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name }, true);
 
     } catch (error) {
@@ -85,9 +81,7 @@ function createSvg({ width, height, imageUrl, image, lines, fontSize, name }, do
   };
 
   if (doCache) {
-    // 이 부분이 Cloudflare 네트워크에 보내는 '명령서'입니다.
-    responseOptions.headers['Cache-Control'] = 'public, max-age=2592000, immutable';
-    // 이 cf 객체가 "나를 다시 실행시키지 마라"고 하는 핵심 명령입니다.
+    responseOptions.headers['Cache-Control'] = 'public, max-age=2592000, s-maxage=2592000, immutable';
     responseOptions.cf = {
       cacheEverything: true,
       cacheTtl: 2592000
@@ -97,7 +91,6 @@ function createSvg({ width, height, imageUrl, image, lines, fontSize, name }, do
   return new Response(svg, responseOptions);
 }
 
-// 헬퍼 함수들은 이전과 동일합니다.
 async function getImage(url, ctx) { const cache = caches.default; const normalizedUrl = new URL(url); normalizedUrl.searchParams.sort(); const cacheKey = normalizedUrl.toString() + `&v=${CACHE_VER}`; const cached = await cache.match(cacheKey); if (cached) return cached.json(); const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } }); if (!response.ok) throw new Error(`Fetch failed: ${response.status}`); const length = response.headers.get('Content-Length'); if (length && parseInt(length, 10) > MAX_SIZE) { throw new Error(`Image size exceeds ${MAX_SIZE / 1024 / 1024}MB`); } const contentType = response.headers.get('Content-Type'); if (!contentType?.startsWith('image/')) { throw new Error(`Invalid content type: '${contentType}'`); } const buffer = await response.arrayBuffer(); const image = { contentType, base64: Buffer.from(buffer).toString('base64') }; const view = new DataView(buffer); let dims = { width: DEF_WIDTH, height: DEF_HEIGHT }; try { if (view.getUint16(0, false) === 0xFFD8) { let offset = 2; while (offset < view.byteLength) { if (view.getUint16(offset, false) === 0xFFC0) { dims = { height: view.getUint16(offset + 5, false), width: view.getUint16(offset + 7, false) }; break; } offset += 2 + view.getUint16(offset + 2, false); } } else if (view.getUint32(0, false) === 0x89504E47) { dims = { width: view.getUint32(16, false), height: view.getUint32(20, false) }; } else if (view.getUint32(8, false) === 0x57454250) { const chunk = new TextDecoder().decode(view.subarray(12, 16)); if (chunk === 'VP8 ') { if ((view.getUint32(19, true) & 0x07) === 0) { dims = { width: view.getUint16(26, true) & 0x3FFF, height: view.getUint16(28, true) & 0x3FFF }; } } else if (chunk === 'VP8L') { const bits = view.getUint32(21, true); dims = { width: (bits & 0x3FFF) + 1, height: (((bits >> 14) & 0x3FFF)) + 1 }; } else if (chunk === 'VP8X') { dims = { width: view.getUint32(24, true) + 1, height: view.getUint32(28, true) + 1 }; } } } catch (e) { } const result = { image, width: dims.width, height: dims.height }; ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(result), { headers: { 'Cache-Control': 'public, max-age=2592000, s-maxage=2592000' } }))); return result; }
 function TW(text, fontSize) { let total = 0; const wideChar = /[\u3000-\u9FFF\uAC00-\uD7AF]/; for (const char of text) { total += wideChar.test(char) ? fontSize : fontSize * 0.55; } return total; }
 function wrap(text, maxWidth, fontSize, widthCalc) { const words = text.split(' '); const lines = []; if (!words.length) return []; let currentLine = words[0]; for (let i = 1; i < words.length; i++) { const word = words[i]; const potentialLine = `${currentLine} ${word}`; if (widthCalc(potentialLine, fontSize) < maxWidth) { currentLine = potentialLine; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; }
