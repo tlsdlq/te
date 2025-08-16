@@ -12,11 +12,25 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 export default {
   async fetch(request, env, ctx) {
+    const getETag = async (data) => {
+      const hashBuffer = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(data));
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return `"${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}"`;
+    };
+
     const url = new URL(request.url);
     const params = url.searchParams;
     const imgUrl = params.get('img');
     const text = params.get('text');
     const name = params.get('name');
+
+    const etagSource = `${imgUrl}|${text}|${name}`;
+    const etag = await getETag(etagSource);
+
+    const ifNoneMatch = request.headers.get('If-None-Match');
+    if (ifNoneMatch && ifNoneMatch === etag) {
+      return new Response(null, { status: 304 });
+    }
 
     if (imgUrl) {
       try {
@@ -34,7 +48,9 @@ export default {
       const { image, width, height } = { image: { contentType: 'image/jpeg', base64: '' }, width: 1200, height: 630 };
       let fontSize = height * FONT_RATIO;
       const lines = wrap(usageText, width - PADDING * 2, fontSize, TW);
-      return createSvg({ width, height, imageUrl: usageImg, image, lines, fontSize, name: "Example" });
+      const response = createSvg({ width, height, imageUrl: usageImg, image, lines, fontSize, name: "Example" });
+      response.headers.set('Cache-Control', 'public, max-age=3600');
+      return response;
     }
 
     try {
@@ -50,7 +66,9 @@ export default {
         lines = wrap(text, availableWidth, fontSize, TW);
       }
 
-      return createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
+      const response = createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
+      response.headers.set('ETag', etag);
+      return response;
 
     } catch (error) {
       console.error('Image processing failed:', error);
@@ -175,7 +193,7 @@ function createSvg({ width, height, imageUrl, image, lines, fontSize, name }) {
   return new Response(svg, {
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=604800'
+      'Cache-Control': 'public, max-age=604800, immutable'
     },
     cf: {
       cacheEverything: true,
