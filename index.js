@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 
 const CACHE_VER = 'v1';
 const ALLOWED_HOSTS = ['images.unsplash.com', 'i.imgur.com', 'raw.githubusercontent.com', 'itimg.kr'];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE = 10 * 1024 * 1024;
 const DEF_WIDTH = 1200;
 const DEF_HEIGHT = 630;
 const PADDING = 40;
@@ -12,6 +12,17 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 export default {
   async fetch(request, env, ctx) {
+    const cache = caches.default;
+    const cacheKeyRequest = new Request(request.url, request);
+    const cachedResponse = await cache.match(cacheKeyRequest);
+
+    if (cachedResponse) {
+      console.log("Serving from FINAL SVG CACHE");
+      return cachedResponse;
+    }
+    
+    console.log("Final SVG cache miss, generating new image.");
+
     const url = new URL(request.url);
     const params = url.searchParams;
     const imgUrl = params.get('img');
@@ -29,7 +40,7 @@ export default {
     }
 
     if (!imgUrl || !text) {
-        const usageImg = 'https://images.unsplash.com/photo-1484417894907-623942c8ee29?w=1200';
+        const usageImg = 'https://images.unsplash.com/photo-14844178942c8ee29?w=1200';
         const usageText = "Usage: ?img=<ALLOWED_URL>&text=<TEXT>&name=<NAME>";
         const { image, width, height } = { image: { contentType: 'image/jpeg', base64: '' }, width: 1200, height: 630 };
         let fontSize = height * FONT_RATIO;
@@ -51,7 +62,13 @@ export default {
           lines = wrap(text, availableWidth, fontSize, TW);
         }
 
-        return createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
+        const finalResponse = createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
+        
+
+        ctx.waitUntil(cache.put(cacheKeyRequest, finalResponse.clone()));
+        
+        return finalResponse;
+
     } catch (error) {
         console.error('Image processing failed:', error);
         const errorText = `Error: Image could not be loaded. (${error.message})`;
@@ -70,7 +87,12 @@ async function getImage(url, ctx) {
     const cacheKey = normalizedUrl.toString() + `&v=${CACHE_VER}`;
     
     const cached = await cache.match(cacheKey);
-    if (cached) return cached.json();
+    if (cached) {
+      console.log("Serving from IMAGE DATA CACHE");
+      return cached.json();
+    }
+    
+    console.log("Image data cache miss, fetching from origin.");
 
     const response = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
