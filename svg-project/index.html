@@ -2,18 +2,73 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SVG Image Generator</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { text-align: center; padding: 2em; border: 1px solid #ccc; border-radius: 8px; }
-        code { background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.5rem; }
+        input[type="text"] { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 0.6rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 2rem; background-color: #f8f9fa; padding: 1rem; border-radius: 4px; word-break: break-all; }
+        #result a { color: #007bff; }
+        #preview { margin-top: 1rem; border: 1px solid #ddd; min-height: 50px; }
+        #preview img { max-width: 100%; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>SVG Image Generator</h1>
-        <p>This function is available at the <code>/image</code> endpoint.</p>
-        <p>Example: <code>/image?img=...&text=...</code></p>
+    <h1>SVG Image Generator</h1>
+    <div id="form">
+        <div class="form-group">
+            <label for="imgUrl">Image URL:</label>
+            <input type="text" id="imgUrl" value="https://images.unsplash.com/photo-14844178942c8ee29">
+        </div>
+        <div class="form-group">
+            <label for="text">Text:</label>
+            <input type="text" id="text" value="This is an example text.">
+        </div>
+        <div class="form-group">
+            <label for="name">Name (Optional):</label>
+            <input type="text" id="name" value="Example">
+        </div>
+        <button id="generateBtn">Generate</button>
     </div>
+
+    <div id="result" style="display: none;">
+        <h3>Generated URL:</h3>
+        <p><a href="#" id="generatedLink" target="_blank"></a></p>
+        <h3>Preview:</h3>
+        <div id="preview">
+            <img id="previewImage" src="" alt="Image Preview">
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('generateBtn').addEventListener('click', () => {
+            const imgUrl = document.getElementById('imgUrl').value;
+            const text = document.getElementById('text').value;
+            const name = document.getElementById('name').value;
+
+            if (!imgUrl || !text) {
+                alert('Image URL and Text are required.');
+                return;
+            }
+
+            const functionPath = '/image';
+            const params = new URLSearchParams({
+                img: imgUrl,
+                text: text,
+                name: name
+            });
+
+            const finalUrl = `${functionPath}?${params.toString()}`;
+
+            document.getElementById('generatedLink').href = finalUrl;
+            document.getElementById('generatedLink').textContent = window.location.origin + finalUrl;
+            document.getElementById('previewImage').src = finalUrl;
+            document.getElementById('result').style.display = 'block';
+        });
+    </script>
 </body>
 </html>
