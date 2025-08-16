@@ -1,0 +1,3 @@
+name = "image-text-overlay"
+main = "src/index.js" 
+compatibility_date = "2025-8-14" 
