@@ -20,11 +20,14 @@ export default {
 
     const url = new URL(request.url);
     const params = url.searchParams;
-    const imgUrl = params.get('img');
-    const text = params.get('text');
-    const name = params.get('name');
 
+    // --- ETag 생성 로직 개선 ---
+    const imgUrl = params.get('img') || '';
+    const text = params.get('text') || '';
+    const name = params.get('name') || '';
     const etagSource = `${imgUrl}|${text}|${name}`;
+    // --- ---
+
     const etag = await getETag(etagSource);
 
     const ifNoneMatch = request.headers.get('If-None-Match');
