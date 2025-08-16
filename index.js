@@ -65,7 +65,10 @@ export default {
 
 async function getImage(url, ctx) {
     const cache = caches.default;
-    const cacheKey = new Request(url.toString() + `&v=${CACHE_VER}`);
+    const normalizedUrl = new URL(url);
+    normalizedUrl.searchParams.sort();
+    const cacheKey = normalizedUrl.toString() + `&v=${CACHE_VER}`;
+    
     const cached = await cache.match(cacheKey);
     if (cached) return cached.json();
 
