@@ -12,17 +12,6 @@ const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 export default {
   async fetch(request, env, ctx) {
-    const cache = caches.default;
-    const cacheKeyRequest = new Request(request.url, request);
-    const cachedResponse = await cache.match(cacheKeyRequest);
-
-    if (cachedResponse) {
-      console.log("Serving from FINAL SVG CACHE");
-      return cachedResponse;
-    }
-    
-    console.log("Final SVG cache miss, generating new image.");
-
     const url = new URL(request.url);
     const params = url.searchParams;
     const imgUrl = params.get('img');
@@ -30,120 +19,102 @@ export default {
     const name = params.get('name');
 
     if (imgUrl) {
-        try {
-            const urlObj = new URL(imgUrl);
-            if (!['https:', 'http:'].includes(urlObj.protocol)) throw new Error('Invalid protocol');
-            if (!ALLOWED_HOSTS.includes(urlObj.hostname)) throw new Error('Host not allowed');
-        } catch (e) {
-            return new Response(e.message === 'Host not allowed' ? 'Host not allowed.' : 'Invalid image URL.', { status: 400 });
-        }
+      try {
+        const urlObj = new URL(imgUrl);
+        if (!['https:', 'http:'].includes(urlObj.protocol)) throw new Error('Invalid protocol');
+        if (!ALLOWED_HOSTS.includes(urlObj.hostname)) throw new Error('Host not allowed');
+      } catch (e) {
+        return new Response(e.message === 'Host not allowed' ? 'Host not allowed.' : 'Invalid image URL.', { status: 400 });
+      }
     }
 
     if (!imgUrl || !text) {
-        const usageImg = 'https://images.unsplash.com/photo-14844178942c8ee29?w=1200';
-        const usageText = "Usage: ?img=<ALLOWED_URL>&text=<TEXT>&name=<NAME>";
-        const { image, width, height } = { image: { contentType: 'image/jpeg', base64: '' }, width: 1200, height: 630 };
-        let fontSize = height * FONT_RATIO;
-        const lines = wrap(usageText, width - PADDING * 2, fontSize, TW);
-        return createSvg({ width, height, imageUrl: usageImg, image, lines, fontSize, name: "Example" });
+      const usageImg = 'https://images.unsplash.com/photo-14844178942c8ee29?w=1200';
+      const usageText = "Usage: ?img=<ALLOWED_URL>&text=<TEXT>&name=<NAME>";
+      const { image, width, height } = { image: { contentType: 'image/jpeg', base64: '' }, width: 1200, height: 630 };
+      let fontSize = height * FONT_RATIO;
+      const lines = wrap(usageText, width - PADDING * 2, fontSize, TW);
+      return createSvg({ width, height, imageUrl: usageImg, image, lines, fontSize, name: "Example" });
     }
 
     try {
-        const { image, width, height } = await getImage(imgUrl, ctx);
-        
-        let fontSize = Math.max(20, height * FONT_RATIO);
-        const availableWidth = width - PADDING * 2;
-        let lines = wrap(text, availableWidth, fontSize, TW);
-        const maxTextHeight = height * 0.45; 
-        const minFontSize = 16;
+      const { image, width, height } = await getImage(imgUrl, ctx);
+      let fontSize = Math.max(20, height * FONT_RATIO);
+      const availableWidth = width - PADDING * 2;
+      let lines = wrap(text, availableWidth, fontSize, TW);
+      const maxTextHeight = height * 0.45;
+      const minFontSize = 16;
 
-        while ((lines.length * fontSize * LINE_HEIGHT) > maxTextHeight && fontSize > minFontSize) {
-          fontSize = Math.max(minFontSize, fontSize - 2);
-          lines = wrap(text, availableWidth, fontSize, TW);
-        }
+      while ((lines.length * fontSize * LINE_HEIGHT) > maxTextHeight && fontSize > minFontSize) {
+        fontSize = Math.max(minFontSize, fontSize - 2);
+        lines = wrap(text, availableWidth, fontSize, TW);
+      }
 
-        const finalResponse = createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
-        
-
-        ctx.waitUntil(cache.put(cacheKeyRequest, finalResponse.clone()));
-        
-        return finalResponse;
+      return createSvg({ width, height, imageUrl: imgUrl, image, lines, fontSize, name });
 
     } catch (error) {
-        console.error('Image processing failed:', error);
-        const errorText = `Error: Image could not be loaded. (${error.message})`;
-        const { width, height } = { width: DEF_WIDTH, height: DEF_HEIGHT };
-        const fontSize = height * 0.03;
-        const lines = wrap(errorText, width - PADDING * 2, fontSize, TW);
-        return errorSvg({ width, height, lines, fontSize });
+      console.error('Image processing failed:', error);
+      const errorText = `Error: Image could not be loaded. (${error.message})`;
+      const { width, height } = { width: DEF_WIDTH, height: DEF_HEIGHT };
+      const fontSize = height * 0.03;
+      const lines = wrap(errorText, width - PADDING * 2, fontSize, TW);
+      return errorSvg({ width, height, lines, fontSize });
     }
   },
 };
 
 async function getImage(url, ctx) {
-    const cache = caches.default;
-    const normalizedUrl = new URL(url);
-    normalizedUrl.searchParams.sort();
-    const cacheKey = normalizedUrl.toString() + `&v=${CACHE_VER}`;
-    
-    const cached = await cache.match(cacheKey);
-    if (cached) {
-      console.log("Serving from IMAGE DATA CACHE");
-      return cached.json();
-    }
-    
-    console.log("Image data cache miss, fetching from origin.");
-
-    const response = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-    });
-    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-
-    const length = response.headers.get('Content-Length');
-    if (length && parseInt(length, 10) > MAX_SIZE) {
-        throw new Error(`Image size exceeds ${MAX_SIZE / 1024 / 1024}MB`);
-    }
-
-    const contentType = response.headers.get('Content-Type');
-    if (!contentType?.startsWith('image/')) {
-        throw new Error(`Invalid content type: '${contentType}'`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    const image = { contentType, base64: Buffer.from(buffer).toString('base64') };
-
-    const view = new DataView(buffer);
-    let dims = { width: DEF_WIDTH, height: DEF_HEIGHT };
-    try {
-        if (view.getUint16(0, false) === 0xFFD8) {
-            let offset = 2;
-            while (offset < view.byteLength) {
-                if (view.getUint16(offset, false) === 0xFFC0) {
-                    dims = { height: view.getUint16(offset + 5, false), width: view.getUint16(offset + 7, false) };
-                    break;
-                }
-                offset += 2 + view.getUint16(offset + 2, false);
-            }
-        } else if (view.getUint32(0, false) === 0x89504E47) {
-            dims = { width: view.getUint32(16, false), height: view.getUint32(20, false) };
-        } else if (view.getUint32(8, false) === 0x57454250) {
-            const chunk = new TextDecoder().decode(view.subarray(12, 16));
-            if (chunk === 'VP8 ') {
-                if ((view.getUint32(19, true) & 0x07) === 0) {
-                    dims = { width: view.getUint16(26, true) & 0x3FFF, height: view.getUint16(28, true) & 0x3FFF };
-                }
-            } else if (chunk === 'VP8L') {
-                const bits = view.getUint32(21, true);
-                dims = { width: (bits & 0x3FFF) + 1, height: (((bits >> 14) & 0x3FFF)) + 1 };
-            } else if (chunk === 'VP8X') {
-                dims = { width: view.getUint32(24, true) + 1, height: view.getUint32(28, true) + 1 };
-            }
+  const cache = caches.default;
+  const normalizedUrl = new URL(url);
+  normalizedUrl.searchParams.sort();
+  const cacheKey = normalizedUrl.toString() + `&v=${CACHE_VER}`;
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached.json();
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+  });
+  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+  const length = response.headers.get('Content-Length');
+  if (length && parseInt(length, 10) > MAX_SIZE) {
+    throw new Error(`Image size exceeds ${MAX_SIZE / 1024 / 1024}MB`);
+  }
+  const contentType = response.headers.get('Content-Type');
+  if (!contentType?.startsWith('image/')) {
+    throw new Error(`Invalid content type: '${contentType}'`);
+  }
+  const buffer = await response.arrayBuffer();
+  const image = { contentType, base64: Buffer.from(buffer).toString('base64') };
+  const view = new DataView(buffer);
+  let dims = { width: DEF_WIDTH, height: DEF_HEIGHT };
+  try {
+    if (view.getUint16(0, false) === 0xFFD8) {
+      let offset = 2;
+      while (offset < view.byteLength) {
+        if (view.getUint16(offset, false) === 0xFFC0) {
+          dims = { height: view.getUint16(offset + 5, false), width: view.getUint16(offset + 7, false) };
+          break;
         }
-    } catch (e) {}
-
-    const result = { image, width: dims.width, height: dims.height };
-    ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(result), { headers: { 'Cache-Control': 'public, max-age=2592000' } })));
-    return result;
+        offset += 2 + view.getUint16(offset + 2, false);
+      }
+    } else if (view.getUint32(0, false) === 0x89504E47) {
+      dims = { width: view.getUint32(16, false), height: view.getUint32(20, false) };
+    } else if (view.getUint32(8, false) === 0x57454250) {
+      const chunk = new TextDecoder().decode(view.subarray(12, 16));
+      if (chunk === 'VP8 ') {
+        if ((view.getUint32(19, true) & 0x07) === 0) {
+          dims = { width: view.getUint16(26, true) & 0x3FFF, height: view.getUint16(28, true) & 0x3FFF };
+        }
+      } else if (chunk === 'VP8L') {
+        const bits = view.getUint32(21, true);
+        dims = { width: (bits & 0x3FFF) + 1, height: (((bits >> 14) & 0x3FFF)) + 1 };
+      } else if (chunk === 'VP8X') {
+        dims = { width: view.getUint32(24, true) + 1, height: view.getUint32(28, true) + 1 };
+      }
+    }
+  } catch (e) { }
+  const result = { image, width: dims.width, height: dims.height };
+  ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(result), { headers: { 'Cache-Control': 'public, max-age=2592000' } })));
+  return result;
 }
 
 function TW(text, fontSize) {
@@ -159,7 +130,6 @@ function wrap(text, maxWidth, fontSize, widthCalc) {
   const words = text.split(' ');
   const lines = [];
   if (!words.length) return [];
-  
   let currentLine = words[0];
   for (let i = 1; i < words.length; i++) {
     const word = words[i];
@@ -175,31 +145,41 @@ function wrap(text, maxWidth, fontSize, widthCalc) {
   return lines;
 }
 
-function esc(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c])); }
+function esc(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '\'': '&apos;', '"': '&quot;' }[c])); }
 
 function errorSvg({ width, height, lines, fontSize }) {
-    const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5);
-    const boxY = (height - boxHeight) / 2;
-    const textElements = lines.map((line, i) => `<tspan x="${PADDING}" dy="${i === 0 ? '0' : `${LINE_HEIGHT}em`}">${esc(line)}</tspan>`).join('');
-    const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><style>.txt{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style><rect width="100%" height="100%" fill="#555"/><rect y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)"/><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="txt">${textElements}</text></svg>`;
-    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });
+  const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5);
+  const boxY = (height - boxHeight) / 2;
+  const textElements = lines.map((line, i) => `<tspan x="${PADDING}" dy="${i === 0 ? '0' : `${LINE_HEIGHT}em`}">${esc(line)}</tspan>`).join('');
+  const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><style>.txt{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}</style><rect width="100%" height="100%" fill="#555"/><rect y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)"/><text x="${PADDING}" y="${boxY + PADDING * 0.5 + fontSize}" class="txt">${textElements}</text></svg>`;
+  return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-cache' } });
 }
 
 function createSvg({ width, height, imageUrl, image, lines, fontSize, name }) {
-    const imgHref = image.base64 ? `data:${image.contentType};base64,${image.base64}` : esc(imageUrl);
-    const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5) + (name ? fontSize : 0);
-    const boxY = height - boxHeight;
-    let nameEl = '';
-    if (name) {
-        const nameFS = fontSize * 0.75;
-        const nameBoxH = nameFS * 1.8;
-        const nameTextW = name.length * nameFS * 0.6;
-        const namePad = nameFS * 0.8;
-        const p = [`0,${boxY}`, `${nameTextW+namePad*2},${boxY}`, `${nameTextW+namePad*2+nameBoxH*0.5},${boxY+nameBoxH}`, `0,${boxY+nameBoxH}`];
-        nameEl = `<polygon points="${p.join(' ')}" fill="rgba(255,255,255,0.25)"/><text x="${namePad}" y="${boxY+nameBoxH/2}" class="name" dominant-baseline="central">${esc(name)}</text>`;
+  const imgHref = image.base64 ? `data:${image.contentType};base64,${image.base64}` : esc(imageUrl);
+  const boxHeight = (lines.length * fontSize * LINE_HEIGHT) + (PADDING * 1.5) + (name ? fontSize : 0);
+  const boxY = height - boxHeight;
+  let nameEl = '';
+  if (name) {
+    const nameFS = fontSize * 0.75;
+    const nameBoxH = nameFS * 1.8;
+    const nameTextW = name.length * nameFS * 0.6;
+    const namePad = nameFS * 0.8;
+    const p = [`0,${boxY}`, `${nameTextW + namePad * 2},${boxY}`, `${nameTextW + namePad * 2 + nameBoxH * 0.5},${boxY + nameBoxH}`, `0,${boxY + nameBoxH}`];
+    nameEl = `<polygon points="${p.join(' ')}" fill="rgba(255,255,255,0.25)"/><text x="${namePad}" y="${boxY + nameBoxH / 2}" class="name" dominant-baseline="central">${esc(name)}</text>`;
+  }
+  const textOffsetY = name ? fontSize * 1.5 : PADDING * 0.5;
+  const textElements = lines.map((line, i) => `<tspan x="${PADDING}" dy="${i === 0 ? '0' : `${LINE_HEIGHT}em`}">${esc(line)}</tspan>`).join('');
+  const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><style>.txt{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}.name{font-family:${FONT_FAMILY};font-size:${fontSize * 0.75}px;fill:white;font-weight:700;}</style><image href="${imgHref}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"/><rect y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)"/>${nameEl}<text x="${PADDING}" y="${boxY + textOffsetY + fontSize}" class="txt">${textElements}</text></svg>`;
+  
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=604800'
+    },
+    cf: {
+      cacheEverything: true,
+      cacheTtl: 2592000
     }
-    const textOffsetY = name ? fontSize * 1.5 : PADDING * 0.5;
-    const textElements = lines.map((line, i) => `<tspan x="${PADDING}" dy="${i === 0 ? '0' : `${LINE_HEIGHT}em`}">${esc(line)}</tspan>`).join('');
-    const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><style>.txt{font-family:${FONT_FAMILY};font-size:${fontSize}px;fill:white;font-weight:600;}.name{font-family:${FONT_FAMILY};font-size:${fontSize*0.75}px;fill:white;font-weight:700;}</style><image href="${imgHref}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"/><rect y="${boxY}" width="100%" height="${boxHeight}" fill="rgba(0,0,0,0.6)"/>${nameEl}<text x="${PADDING}" y="${boxY+textOffsetY+fontSize}" class="txt">${textElements}</text></svg>`;
-    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=86400, s-maxage=2592000' } });
+  });
 }
