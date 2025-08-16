@@ -3,3 +3,7 @@ main = "index.js"
 compatibility_date = "2025-08-14" # Or your existing date
 
 compatibility_flags = ["nodejs_compat"]
+[routes]
+pattern = "https://tls.tlsdlq.workers.dev/*" # 이 패턴이 정확한지 확인
+# 또는
+# pattern = "example.com/api/image*"
