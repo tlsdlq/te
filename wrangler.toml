@@ -1,4 +1,4 @@
-name = "tls"
+name = "ie"
 
 main = "src/index.js"
 
