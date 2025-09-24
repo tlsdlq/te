@@ -190,4 +190,4 @@ function TW(text, fontSize) { let total = 0; const wideChar = /[\u3000-\u9FFF\uA
 
 function wrap(text, maxWidth, fontSize, widthCalc) { const words = text.split(' '); const lines = []; if (!words.length) return []; let currentLine = words[0]; for (let i = 1; i < words.length; i++) { const word = words[i]; const potentialLine = `${currentLine} ${word}`; if (widthCalc(potentialLine, fontSize) < maxWidth) { currentLine = potentialLine; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; }
 
-function esc(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({ '<': '<', '>': '>', '&': '&', '\'': ''}"': '"' }[c])); }
+function esc(unsafe) { return unsafe.replace(/[<>&'"]/g, c => ({ '<': '<', '>': '>', '&': '&', '\'': '\'', '"': '"' }[c])); }
